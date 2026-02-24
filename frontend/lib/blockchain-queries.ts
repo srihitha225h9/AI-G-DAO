@@ -2,6 +2,7 @@
 
 import algosdk from 'algosdk';
 import { algodClient, CONTRACT_IDS } from '@/lib/algorand';
+import { memberTracker } from '@/lib/member-tracker';
 
 export interface BlockchainProposal {
   id: number;
@@ -383,17 +384,20 @@ export class ClimateDAOQueryService {
    */
   async getTotalMembers(): Promise<number> {
     try {
-      // Check if contract is deployed first
+      // Use API member tracker for global count
+      const count = await memberTracker.getMemberCount();
+      if (count > 0) return count;
+      
+      // Fallback to contract if API fails
       if (!(await this.isContractDeployed())) {
-        // Use actual connected wallet count when contract isn't deployed
-        return 1; // Just the current user
+        return 0;
       }
 
       const globalState = await this.getGlobalState();
-      return globalState.total_members || 1;
+      return globalState.total_members || 0;
     } catch (error) {
       console.error('Error getting total members:', error);
-      return 1; // Return 1 on error (current user)
+      return 0;
     }
   }
 

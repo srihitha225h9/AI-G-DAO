@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react'
 import { PeraWalletConnect } from '@perawallet/connect'
 import algosdk from 'algosdk'
+import { memberTracker } from '@/lib/member-tracker'
 
 const peraWallet = new PeraWalletConnect()
 
@@ -88,14 +89,15 @@ function useWallet(): WalletState {
       // Fetch balance
       await fetchBalance(account)
       
-      // Auto-join DAO when wallet connects
+      // Register member
       try {
-        // Import dynamically to avoid circular dependency
-        const { useClimateDAO } = await import('@/hooks/use-climate-dao')
-        // Note: This is a simplified approach. In production, you'd handle this in a component
-        console.log('✅ Wallet connected. User can now join DAO from dashboard.')
+        const isNew = await memberTracker.registerMember(account)
+        if (isNew) {
+          const count = await memberTracker.getMemberCount()
+          console.log('🎉 New member joined! Total members:', count)
+        }
       } catch (err) {
-        console.log('DAO join will be available from dashboard')
+        console.error('Failed to register member:', err)
       }
       
     } catch (err: any) {
@@ -169,6 +171,13 @@ function useWallet(): WalletState {
           setAddress(account)
           setIsConnected(true)
           await fetchBalance(account)
+          
+          // Register member
+          try {
+            await memberTracker.registerMember(account)
+          } catch (err) {
+            console.error('Failed to register member:', err)
+          }
         }
       } catch (err) {
         console.error('Failed to reconnect wallet:', err)
