@@ -8,6 +8,7 @@ import { FileTextIcon, ClockIcon, CheckCircleIcon, XCircleIcon } from 'lucide-re
 import { useWalletContext } from '@/hooks/use-wallet';
 import { useClimateDAO } from '@/hooks/use-climate-dao';
 import { BlockchainProposal } from '@/lib/blockchain-queries';
+import Link from 'next/link';
 
 export function UserProposalsTracker() {
   const { address, isConnected } = useWalletContext();
@@ -139,54 +140,56 @@ export function UserProposalsTracker() {
               const yesPercentage = totalVotes > 0 ? Math.round((proposal.voteYes / totalVotes) * 100) : 0;
               
               return (
-                <div key={proposal.id} className="bg-white/5 rounded-xl p-4 border border-white/10 hover:bg-white/10 transition-all duration-300">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center">
-                        {getStatusIcon(proposal.status)}
-                      </div>
-                      <div>
-                        <h4 className="text-white font-medium text-sm">{proposal.title}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge className={getStatusColor(proposal.status)}>
-                            {proposal.status.toUpperCase()}
-                          </Badge>
-                          {proposal.aiScore && (
-                            <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/50">
-                              AI Score: {proposal.aiScore}/10
+                <Link key={proposal.id} href={`/proposal/${proposal.id}`} className="block">
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/10 hover:bg-white/10 transition-all duration-300">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center">
+                          {getStatusIcon(proposal.status)}
+                        </div>
+                        <div>
+                          <h4 className="text-white font-medium text-sm">{proposal.title}</h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge className={getStatusColor(proposal.status)}>
+                              {proposal.status.toUpperCase()}
                             </Badge>
-                          )}
+                            {proposal.aiScore && (
+                              <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/50">
+                                AI Score: {proposal.aiScore}/10
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
+                      <div className="text-right text-sm">
+                        <div className="text-white/60">
+                          Created {formatTimeAgo(proposal.creationTime)}
+                        </div>
+                        {proposal.status === 'active' && (
+                          <div className="text-yellow-400 text-xs">
+                            {formatTimeLeft(proposal.endTime)}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-right text-sm">
+                    
+                    <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
                       <div className="text-white/60">
-                        Created {formatTimeAgo(proposal.creationTime)}
+                        Funding: ${proposal.fundingAmount.toLocaleString()}
                       </div>
-                      {proposal.status === 'active' && (
-                        <div className="text-yellow-400 text-xs">
-                          {formatTimeLeft(proposal.endTime)}
-                        </div>
-                      )}
+                      <div className="text-white/60">
+                        Votes: {yesPercentage}% yes ({totalVotes} total)
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                      <span className="text-xs text-white/40">
+                        Proposal #{proposal.id} • {proposal.category}
+                      </span>
+                      {/* Buttons removed for clean interface */}
                     </div>
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
-                    <div className="text-white/60">
-                      Funding: ${proposal.fundingAmount.toLocaleString()}
-                    </div>
-                    <div className="text-white/60">
-                      Votes: {yesPercentage}% yes ({totalVotes} total)
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                    <span className="text-xs text-white/40">
-                      Proposal #{proposal.id} • {proposal.category}
-                    </span>
-                    {/* Buttons removed for clean interface */}
-                  </div>
-                </div>
+                </Link>
               );
             })}
             

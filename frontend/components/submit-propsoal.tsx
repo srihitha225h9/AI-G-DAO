@@ -110,11 +110,27 @@ export function SubmitProposalPage() {
         location: "",
       })
       
-      // Auto redirect to dashboard after 2 seconds
-      setTimeout(() => {
-        router.push('/dashboard')
-      }, 2000)
-      
+      // Save proposal draft to sessionStorage and redirect to AI impact analysis page
+      try {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('proposalDraft', JSON.stringify({
+            title: formData.projectTitle,
+            description: formData.description,
+            category: formData.category,
+            fundingAmount: fundingAmountNum,
+            expectedImpact: formData.expectedImpact,
+            location: formData.location,
+            txId: result.txId,
+            proposalId: (result as any).proposalId || undefined
+          }))
+        }
+      } catch (err) {
+        console.warn('Failed to store proposal draft:', err)
+      }
+
+      // Redirect user to AI review page for impact analysis
+      router.push('/proposal-review')
+
     } catch (err) {
       console.error('Failed to submit proposal:', err)
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
@@ -156,7 +172,7 @@ export function SubmitProposalPage() {
           <div className="w-6 h-6 sm:w-8 sm:h-8 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-lg flex items-center justify-center">
             <LeafIcon className="w-3 h-3 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div className="text-blue-400 font-bold text-base sm:text-lg">TerraLinke</div>
+          <div className="text-blue-400 font-bold text-base sm:text-lg">EcoNexus</div>
         </div>
       </header>
 
@@ -168,7 +184,7 @@ export function SubmitProposalPage() {
           <div className="text-center space-y-2 sm:space-y-4">
             <h1 className="text-2xl sm:text-4xl font-bold text-white leading-tight">Submit Climate Proposal</h1>
             <p className="text-blue-300 text-sm sm:text-lg">
-              Propose your climate impact project to the TerraLinke community
+              Propose your climate impact project to the EcoNexus community
             </p>
           </div>
 

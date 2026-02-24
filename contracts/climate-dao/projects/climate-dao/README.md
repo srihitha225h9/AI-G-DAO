@@ -20,7 +20,7 @@ Start by cloning this repository to your local machine.
 Ensure the following pre-requisites are installed and properly configured:
 
 - **Docker**: Required for running a local Algorand network. [Install Docker](https://www.docker.com/).
-- **AlgoKit CLI**: Essential for project setup and operations. Install the latest version from [AlgoKit CLI Installation Guide](https://github.com/algorandfoundation/algokit-cli#install). Verify installation with `algokit --version`, expecting `2.0.0` or later.
+- **AlgoKit CLI**: Essential for project setup and operations. Install the latest version from the AlgoKit CLI Installation Guide. Verify installation with `algokit --version`, expecting `2.0.0` or later.
 
 #### 3. Bootstrap Your Local Environment
 Run the following commands within the project folder:
@@ -57,11 +57,11 @@ While primarily optimized for VS Code, JetBrains IDEs are supported:
 3. **Debugging**: Use `Shift+F10` or `Ctrl+R` to start debugging. Note: Windows users may encounter issues with pre-launch tasks due to a known bug. See [JetBrains forums](https://youtrack.jetbrains.com/issue/IDEA-277486/Shell-script-configuration-cannot-run-as-before-launch-task) for workarounds.
 
 ## AlgoKit Workspaces and Project Management
-This project supports both standalone and monorepo setups through AlgoKit workspaces. Leverage [`algokit project run`](https://github.com/algorandfoundation/algokit-cli/blob/main/docs/features/project/run.md) commands for efficient monorepo project orchestration and management across multiple projects within a workspace.
+This project supports both standalone and monorepo setups through AlgoKit workspaces. Leverage `algokit project run` commands for efficient monorepo project orchestration and management across multiple projects within a workspace.
 
 ## AlgoKit Generators
 
-This template provides a set of [algokit generators](https://github.com/algorandfoundation/algokit-cli/blob/main/docs/features/generate.md) that allow you to further modify the project instantiated from the template to fit your needs, as well as giving you a base to build your own extensions to invoke via the `algokit generate` command.
+This template provides a set of algokit generators that allow you to further modify the project instantiated from the template to fit your needs, as well as giving you a base to build your own extensions to invoke via the `algokit generate` command.
 
 ### Generate Smart Contract 
 
@@ -75,7 +75,7 @@ By default the template creates a single `HelloWorld` contract under climate_dao
 
 ### Generate '.env' files
 
-By default the template instance does not contain any env files. Using [`algokit project deploy`](https://github.com/algorandfoundation/algokit-cli/blob/main/docs/features/project/deploy.md) against `localnet` | `testnet` | `mainnet` will use default values for `algod` and `indexer` unless overwritten via `.env` or `.env.{target_network}`. 
+By default the template instance does not contain any env files. Using `algokit project deploy` against `localnet` | `testnet` | `mainnet` will use default values for `algod` and `indexer` unless overwritten via `.env` or `.env.{target_network}`. 
 
 To generate a new `.env` or `.env.{target_network}` file, run `algokit generate env-file`
 
@@ -93,8 +93,8 @@ For information on using and setting up the `AlgoKit AVM Debugger` VSCode extens
 This project makes use of Algorand Python to build Algorand smart contracts. The following tools are in use:
 
 - [Algorand](https://www.algorand.com/) - Layer 1 Blockchain; [Developer portal](https://dev.algorand.co/), [Why Algorand?](https://dev.algorand.co/getting-started/why-algorand/)
-- [AlgoKit](https://github.com/algorandfoundation/algokit-cli) - One-stop shop tool for developers building on the Algorand network; [docs](https://github.com/algorandfoundation/algokit-cli/blob/main/docs/algokit.md), [intro tutorial](https://github.com/algorandfoundation/algokit-cli/blob/main/docs/tutorials/intro.md)
-- [Algorand Python](https://github.com/algorandfoundation/puya) - A semantically and syntactically compatible, typed Python language that works with standard Python tooling and allows you to express smart contracts (apps) and smart signatures (logic signatures) for deployment on the Algorand Virtual Machine (AVM); [docs](https://github.com/algorandfoundation/puya), [examples](https://github.com/algorandfoundation/puya/tree/main/examples)
+- AlgoKit - One-stop shop tool for developers building on the Algorand network; see the official documentation and tutorials for details.
+- Algorand Python (puya) - A semantically and syntactically compatible, typed Python language that works with standard Python tooling and allows you to express smart contracts (apps) and smart signatures (logic signatures) for deployment on the Algorand Virtual Machine (AVM); see the puya docs and examples for more information.
 - [AlgoKit Utils](https://github.com/algorandfoundation/algokit-utils-py) - A set of core Algorand utilities that make it easier to build solutions on Algorand.
 - [Poetry](https://python-poetry.org/): Python packaging and dependency management.
 It has also been configured to have a productive dev experience out of the box in [VS Code](https://code.visualstudio.com/), see the [.vscode](./.vscode) folder.

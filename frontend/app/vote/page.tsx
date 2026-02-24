@@ -491,7 +491,7 @@ export default function VotePage() {
 
         {/* Footer */}
         <footer className="relative z-10 text-center py-6 text-white/60 text-sm border-t border-white/10">
-          <p>&copy; {new Date().getFullYear()} TerraLinke. Decentralized climate action through blockchain governance.</p>
+          <p>&copy; {new Date().getFullYear()} EcoNexus. Decentralized climate action through blockchain governance.</p>
         </footer>
 
         {/* Vote Confirmation Dialog */}

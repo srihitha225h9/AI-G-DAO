@@ -133,6 +133,7 @@ export function useClimateDAO() {
           applicationIndex: CONTRACT_IDS.CLIMATE_DAO,
           timestamp: Date.now(),
           success: true,
+          proposalId: proposalId,
           message: 'Proposal submitted successfully (Demo Mode)'
         } as TransactionResult;
       }
@@ -175,7 +176,11 @@ export function useClimateDAO() {
       
       console.log('Proposal confirmed:', result);
       
-      return result;
+      // Attach the proposalId we generated locally so callers can link analysis to the proposal
+      return {
+        ...result,
+        proposalId: proposalId
+      } as TransactionResult; 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Proposal submission failed';
       console.error('Proposal submission error:', err);

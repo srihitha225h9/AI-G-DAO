@@ -436,7 +436,7 @@ export function DashboardPage() {
                 <LeafIcon className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-white font-bold text-base sm:text-lg">TerraLinke</h1>
+                <h1 className="text-white font-bold text-base sm:text-lg">EcoNexus</h1>
                 <p className="text-white/60 text-xs hidden sm:block">Climate DAO Platform</p>
               </div>
             </div>
@@ -814,19 +814,8 @@ export function DashboardPage() {
       <footer className="relative z-10 border-t border-white/10 bg-white/5 backdrop-blur-md mt-12">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="text-center">
-            <p className="text-white/80 text-sm mb-2">
-              Built with 💚 by{" "}
-              <a
-              href="https://github.com/lhcee3"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-white font-medium underline hover:text-cyan-400 transition"
-              >
-              Aneesh
-              </a>
-            </p>
             <p className="text-white/40 text-xs">
-              Powered by Algorand & AI • &copy; {new Date().getFullYear()} TerraLinke
+              Powered by Algorand & AI • &copy; {new Date().getFullYear()} EcoNexus
             </p>
           </div>
         </div>

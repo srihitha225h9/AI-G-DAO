@@ -1,6 +1,6 @@
-# 🌏TerraLinke Documentation
+# 🌏EcoNexus Documentation
 
-Welcome to **TerraLinke** - the revolutionary AI-Governed DAO that's transforming climate action through hybrid intelligence! This comprehensive platform combines cutting-edge artificial intelligence with human wisdom to fund and govern climate impact projects on Algorand's carbon-negative blockchain.
+Welcome to **EcoNexus** - the revolutionary AI-Governed DAO that's transforming climate action through hybrid intelligence! This comprehensive platform combines cutting-edge artificial intelligence with human wisdom to fund and govern climate impact projects on Algorand's carbon-negative blockchain.
 
 ## World-Changing Innovation
 
@@ -88,11 +88,7 @@ TerraLinke isn't just another climate platform - it's the future of environmenta
 
 ### Environment Setup
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/lhcee3/AI-G-DAO.git
-   cd AI-G-DAO
-   ```
+1. **Obtain repository source**: Use your preferred method to get a copy of the project (internal distribution or provided archive).
 
 2. **Frontend Setup (Production-Ready):**
    ```bash
@@ -147,7 +143,7 @@ AI-G-DAO/
 │   ├── components/        # Reusable UI components
 │   ├── hooks/            # Custom React hooks
 │   └── lib/              # Utility libraries
-└── .github/              # GitHub workflows and templates
+
 ```
 
 ## Technology Stack
@@ -201,23 +197,19 @@ This project is licensed under the MIT License - see the [LICENSE](../LICENSE) f
 
 ## Links
 
-- **Website**: [TerraLinke](https://terralinke.vercel.app)
-- **GitHub**: [AI-G-DAO Repository](https://github.com/lhcee3/AI-G-DAO)
-- **Developer**: [Aneesh](https://github.com/lhcee3)
+- **Website**: [EcoNexus](https://terralinke.vercel.app)
 - **Algorand**: [Official Website](https://algorand.com)
 
 ## Support & Community
 
-Join the TerraLinke revolution:
+Join the EcoNexus community:
 
 1. Explore the [comprehensive documentation](./README.md)
-2. Search [existing issues](https://github.com/lhcee3/AI-G-DAO/issues)
-3. Create a [new discussion](https://github.com/lhcee3/AI-G-DAO/issues/new)
-4. Join our growing community of climate innovators
+2. Join our growing community of climate innovators
 
 ---
 
 **TerraLinke** - Where AI meets humanity to save our planet  
-Built with love on Algorand's carbon-negative blockchain for maximum environmental impact.
+Powered by Algorand's carbon-negative blockchain for maximum environmental impact.
 
 *Ready to revolutionize climate action? The future starts here.*

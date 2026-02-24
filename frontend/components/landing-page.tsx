@@ -21,26 +21,9 @@ export function LandingPage() {
           <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg">
             <LeafIcon className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
           </div>
-          <div className="text-teal-400 font-bold text-xl sm:text-3xl tracking-wide drop-shadow-lg">TerraLinke</div>
+          <div className="text-teal-400 font-bold text-xl sm:text-3xl tracking-wide drop-shadow-lg">EcoNexus</div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <a 
-            href="https://github.com/lhcee3/AI-G-DAO" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="hidden sm:inline-flex items-center gap-2 px-4 py-2 border border-gray-500/50 text-gray-300 hover:text-white hover:border-gray-400/70 bg-transparent rounded-md transition-all duration-200 hover:bg-gray-800/30 touch-manipulation"
-          >
-            <StarIcon className="w-4 h-4" />
-            <span className="text-sm font-medium">Star on GitHub</span>
-          </a>
-          <a 
-            href="https://github.com/lhcee3/AI-G-DAO" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="sm:hidden p-2 border border-gray-500/50 text-gray-300 hover:text-white hover:border-gray-400/70 bg-transparent rounded-md transition-all duration-200 hover:bg-gray-800/30 touch-manipulation"
-          >
-            <GithubIcon className="w-4 h-4" />
-          </a>
           <Link href="/connect-wallet">
             <Button variant="ghost" className="bg-white/5 border border-white/20 text-white hover:bg-white/10 text-xs sm:text-sm px-3 sm:px-4 py-2 h-8 sm:h-10 touch-manipulation">
               Connect Wallet
@@ -149,7 +132,7 @@ export function LandingPage() {
         <section className="py-12 sm:py-20 px-4">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-8 sm:mb-16">
-              <h2 className="text-2xl sm:text-4xl font-bold text-white mb-3 sm:mb-4">Why TerraLinke?</h2>
+              <h2 className="text-2xl sm:text-4xl font-bold text-white mb-3 sm:mb-4">Why EcoNexus?</h2>
               <p className="text-sm sm:text-xl text-gray-300 max-w-2xl mx-auto">
                 Transparent, efficient, and impactful climate action through innovation
               </p>
@@ -236,7 +219,7 @@ export function LandingPage() {
           <div className="max-w-4xl mx-auto text-center space-y-6 sm:space-y-8">
             <h2 className="text-2xl sm:text-4xl font-bold text-white">Ready to Make an Impact?</h2>
             <p className="text-sm sm:text-xl text-gray-300 max-w-2xl mx-auto">
-              Join the TerraLinke community and start funding climate projects that matter
+              Join the EcoNexus community and start funding climate projects that matter
             </p>
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-center pt-4">
               <Link href="/connect-wallet">
@@ -263,7 +246,7 @@ export function LandingPage() {
                 <div className="w-6 h-6 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-lg flex items-center justify-center">
                   <LeafIcon className="w-4 h-4 text-white" />
                 </div>
-                <span className="text-teal-400 font-bold text-lg">TerraLinke</span>
+                <span className="text-teal-400 font-bold text-lg">EcoNexus</span>
               </div>
               <p className="text-white/60 text-xs sm:text-sm">
                 AI-governed climate action DAO on Algorand blockchain
@@ -289,14 +272,6 @@ export function LandingPage() {
               <h4 className="text-white font-semibold mb-3 text-sm">Connect</h4>
               <div className="space-y-2 text-xs sm:text-sm">
                 <a 
-                  href="https://github.com/lhcee3/AI-G-DAO" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="block text-white/60 hover:text-white transition-colors"
-                >
-                  GitHub
-                </a>
-                <a 
                   href="https://algorand.foundation/" 
                   target="_blank" 
                   rel="noopener noreferrer"
@@ -310,7 +285,7 @@ export function LandingPage() {
           
           <div className="border-t border-white/10 mt-6 sm:mt-8 pt-4 sm:pt-6 text-center">
             <p className="text-white/40 text-xs">
-              © 2024 TerraLinke. Built with ❤️ for the planet.
+              © 2024 EcoNexus.
             </p>
           </div>
         </div>

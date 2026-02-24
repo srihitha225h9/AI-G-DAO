@@ -2,7 +2,7 @@
 name = "climate-dao"
 version = "0.1.0"
 description = "Algorand smart contracts"
-authors = ["Aneesh <aneeshsharmag@gmail.com>"]
+authors = []
 readme = "README.md"
 package-mode = false
 

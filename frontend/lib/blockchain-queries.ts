@@ -16,6 +16,7 @@ export interface BlockchainProposal {
   category: string;
   aiScore?: number;
   creationTime: number;
+  preservedBy?: string[]; // addresses for whom this proposal should be preserved
 }
 
 export interface BlockchainStats {
@@ -252,7 +253,8 @@ export class ClimateDAOQueryService {
         endTime: proposal.endTime,
         category: proposal.category,
         aiScore: proposal.aiScore || 0,
-        creationTime: Date.now()
+        creationTime: Date.now(),
+        preservedBy: [proposal.creator]
       };
 
       // Store in browser localStorage as fallback/cache
@@ -600,20 +602,27 @@ export class ClimateDAOQueryService {
       });
 
       // Filter out expired proposals that have been expired for more than the specified days
+      // but always keep proposals that are preserved (e.g., created by a user who should see them forever)
       const proposalsToKeep = updatedProposals.filter(proposal => {
+        // If proposal is explicitly preserved for any user, do not remove it
+        if (proposal.preservedBy && proposal.preservedBy.length > 0) {
+          return true;
+        }
+
         if (proposal.status === 'expired') {
           const expiredFor = now - proposal.endTime;
           const shouldRemove = expiredFor > daysInMs;
-          
+
           if (shouldRemove) {
             console.log(`Removing expired proposal: "${proposal.title}" (expired ${Math.floor(expiredFor / (24 * 60 * 60 * 1000))} days ago)`);
-            
-            // Clean up associated vote data
+
+            // Clean up associated proposal-aggregated vote data only
             this.cleanupProposalVoteData(proposal.id);
           }
-          
+
           return !shouldRemove;
         }
+
         return true; // Keep all non-expired proposals
       });
 
@@ -637,28 +646,10 @@ export class ClimateDAOQueryService {
    */
   private cleanupProposalVoteData(proposalId: number): void {
     try {
-      // Remove proposal-specific vote data
+      // Remove only aggregated proposal-specific vote storage
+      // Keep individual user vote history intact so users can always see their past votings
       localStorage.removeItem(`proposal_votes_${proposalId}`);
-      
-      // Clean up from user voting histories
-      const userVotesKeys = Object.keys(localStorage).filter(key => key.startsWith('user_votes_'));
-      
-      userVotesKeys.forEach(key => {
-        try {
-          const userVotes = JSON.parse(localStorage.getItem(key) || '[]');
-          const filteredVotes = userVotes.filter((vote: VotingRecord) => vote.proposalId !== proposalId);
-          
-          if (filteredVotes.length !== userVotes.length) {
-            localStorage.setItem(key, JSON.stringify(filteredVotes));
-          }
-        } catch (error) {
-          console.error(`Error cleaning up user votes for key ${key}:`, error);
-        }
-      });
-
-      // Remove individual vote records
-      const voteKeys = Object.keys(localStorage).filter(key => key.includes(`_${proposalId}`));
-      voteKeys.forEach(key => localStorage.removeItem(key));
+      // NOTE: Do not remove `user_votes_{address}` entries or per-user vote records; preserve voting history
       
     } catch (error) {
       console.error(`Error cleaning up vote data for proposal ${proposalId}:`, error);

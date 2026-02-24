@@ -59,7 +59,7 @@ export function WalletConnectPage() {
           <div className="w-8 h-8 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-lg flex items-center justify-center">
             <LeafIcon className="w-5 h-5 text-white" />
           </div>
-          <div className="text-blue-400 font-bold text-lg">TerraLinke</div>
+          <div className="text-blue-400 font-bold text-lg">EcoNexus</div>
         </div>
       </header>
 
@@ -68,7 +68,7 @@ export function WalletConnectPage() {
           <div className="text-center space-y-4">
             <h1 className="text-4xl font-bold tracking-tight text-white">Connect Your Algorand Wallet</h1>
             <p className="text-blue-300 text-lg">
-              Connect your Pera Wallet to participate in TerraLinke on Algorand blockchain
+              Connect your Pera Wallet to participate in EcoNexus on Algorand blockchain
             </p>
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/30 rounded-full text-sm text-green-400">
               <div className="w-2 h-2 bg-green-400 rounded-full"></div>
@@ -83,7 +83,7 @@ export function WalletConnectPage() {
               </div>
               <CardTitle className="text-2xl text-white">Pera Wallet (Algorand)</CardTitle>
               <CardDescription className="text-white/70">
-                The official wallet for Algorand blockchain. TerraLinke does not support MetaMask or Ethereum wallets.
+                The official wallet for Algorand blockchain. EcoNexus does not support MetaMask or Ethereum wallets.
               </CardDescription>
             </CardHeader>
 
@@ -95,7 +95,7 @@ export function WalletConnectPage() {
                     <div className="text-xs text-white/60 space-y-1">
                       <p><strong>Why can't I use MetaMask?</strong></p>
                       <ul className="list-disc list-inside ml-2 space-y-1">
-                        <li>TerraLinke is built on Algorand blockchain (carbon-negative)</li>
+                        <li>EcoNexus is built on Algorand blockchain (carbon-negative)</li>
                         <li>MetaMask only supports Ethereum-compatible networks</li>
                         <li>You need Pera Wallet for Algorand interactions</li>
                         <li>Visit <a href="https://perawallet.app" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">perawallet.app</a> to download</li>
@@ -226,7 +226,7 @@ export function WalletConnectPage() {
             </div>
             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mt-2">
               <p className="text-xs text-yellow-400 leading-relaxed">
-                <strong>⚠️ Important:</strong> TerraLinke uses Algorand blockchain, not Ethereum. MetaMask will not work with this platform. Please use Pera Wallet for Algorand.
+                <strong>⚠️ Important:</strong> EcoNexus uses Algorand blockchain, not Ethereum. MetaMask will not work with this platform. Please use Pera Wallet for Algorand.
               </p>
             </div>
           </div>

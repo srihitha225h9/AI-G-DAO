@@ -10,13 +10,13 @@ By default, `projects_root_path` parameter is set to `projects`. Which instructs
 
 To get started refer to `README.md` files in respective sub-projects in the `projects` directory.
 
-To learn more about algokit, visit [documentation](https://github.com/algorandfoundation/algokit-cli/blob/main/docs/algokit.md).
+To learn more about AlgoKit, see the official documentation.
 
-### GitHub Codespaces
+### Development Container
 
 To get started execute:
 
-1. `algokit generate devcontainer` - invoking this command from the root of this repository will create a `devcontainer.json` file with all the configuration needed to run this project in a GitHub codespace. [Run the repository inside a codespace](https://docs.github.com/en/codespaces/getting-started/quickstart) to get started.
-2. `algokit init` - invoke this command inside a github codespace to launch an interactive wizard to guide you through the process of creating a new AlgoKit project
+1. `algokit generate devcontainer` - invoking this command from the root of this repository will create a `devcontainer.json` file with configuration needed to run the project in a development container.
+2. `algokit init` - invoke this command to launch an interactive wizard to guide you through creating a new AlgoKit project
 
 Powered by [Copier templates](https://copier.readthedocs.io/en/stable/).

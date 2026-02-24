@@ -42,7 +42,7 @@ export function ProposalSearch({
 
   // Load recent searches from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('terralinke_recent_searches');
+    const saved = localStorage.getItem('econexus_recent_searches');
     if (saved) {
       try {
         setRecentSearches(JSON.parse(saved));
@@ -89,7 +89,7 @@ export function ProposalSearch({
       ].slice(0, 5); // Keep only 5 recent searches
       
       setRecentSearches(newRecentSearches);
-      localStorage.setItem('terralinke_recent_searches', JSON.stringify(newRecentSearches));
+      localStorage.setItem('econexus_recent_searches', JSON.stringify(newRecentSearches));
       
       setShowSuggestions(false);
       searchRef.current?.blur();
@@ -111,7 +111,7 @@ export function ProposalSearch({
 
   const clearRecentSearches = () => {
     setRecentSearches([]);
-    localStorage.removeItem('terralinke_recent_searches');
+    localStorage.removeItem('econexus_recent_searches');
   };
 
   return (

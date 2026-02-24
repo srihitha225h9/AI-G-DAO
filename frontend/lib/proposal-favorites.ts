@@ -3,7 +3,7 @@
  * Handles localStorage operations for user's favorite proposals
  */
 
-const FAVORITES_STORAGE_KEY = 'terralinke_favorites'
+const FAVORITES_STORAGE_KEY = 'econexus_favorites'
 
 export interface FavoritesData {
   proposals: string[] // Array of proposal IDs

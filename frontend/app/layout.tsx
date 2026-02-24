@@ -5,9 +5,9 @@ import { LoadingProvider } from '@/hooks/use-loading'
 import { PageTransitionLoader } from '@/components/page-transition-loader'
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://terralinke.vercel.app'),
-  title: 'TerraLinke - Climate Impact Funding',
-  description: 'TerraLinke: AI-Governed DAO for Climate Impact - Revolutionizing green project funding with hybrid intelligence on Algorand',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://econexus.vercel.app'),
+  title: 'EcoNexus - Climate Impact Funding',
+  description: 'EcoNexus: AI-Governed DAO for Climate Impact - Revolutionizing green project funding with hybrid intelligence on Algorand',
   generator: 'Next.js',
   manifest: '/manifest.json',
   icons: {
@@ -16,15 +16,15 @@ export const metadata: Metadata = {
     apple: '/icon.png',
   },
   openGraph: {
-    title: 'TerraLinke - Climate Impact Funding',
-    description: 'TerraLinke: AI-Governed DAO for Climate Impact on Algorand Blockchain',
+    title: 'EcoNexus - Climate Impact Funding',
+    description: 'EcoNexus: AI-Governed DAO for Climate Impact on Algorand Blockchain',
     type: 'website',
     images: ['/icon.png'],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'TerraLinke - Climate Impact Funding',
-    description: 'TerraLinke: AI-Governed DAO for Climate Impact on Algorand Blockchain',
+    title: 'EcoNexus - Climate Impact Funding',
+    description: 'EcoNexus: AI-Governed DAO for Climate Impact on Algorand Blockchain',
     images: ['/icon.png'],
   },
 }

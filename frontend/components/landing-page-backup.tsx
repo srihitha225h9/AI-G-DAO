@@ -21,18 +21,9 @@ export function LandingPage() {
           <div className="w-10 h-10 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg">
             <LeafIcon className="w-6 h-6 text-white" />
           </div>
-          <div className="text-teal-400 font-bold text-3xl tracking-wide drop-shadow-lg">TerraLinke</div>
+          <div className="text-teal-400 font-bold text-3xl tracking-wide drop-shadow-lg">EcoNexus</div>
         </div>
         <div className="flex items-center gap-3">
-          <a 
-            href="https://github.com/lhcee3/AI-G-DAO" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-500/50 text-gray-300 hover:text-white hover:border-gray-400/70 bg-transparent rounded-md transition-all duration-200 hover:bg-gray-800/30"
-          >
-            <StarIcon className="w-4 h-4" />
-            <span className="text-sm font-medium">Star on GitHub</span>
-          </a>
           <Link href="/connect-wallet">
             <Button variant="outline" className="border-teal-500/50 text-teal-400 hover:bg-teal-500/10 bg-transparent">
               Connect Wallet
@@ -141,7 +132,7 @@ export function LandingPage() {
         <section className="py-20 px-4">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-16">
-              <h2 className="text-4xl font-bold text-white mb-4">Why TerraLinke?</h2>
+              <h2 className="text-4xl font-bold text-white mb-4">Why EcoNexus?</h2>
               <p className="text-xl text-gray-300 max-w-2xl mx-auto">
                 Transparent, efficient, and impactful climate action through innovation
               </p>
@@ -254,15 +245,7 @@ export function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 py-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="text-gray-400 text-sm">
-              &copy; {new Date().getFullYear()} TerraLinke. Built by{" "}
-              <a
-                href="https://github.com/lhcee3"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-teal-400 hover:text-teal-300 underline"
-              >
-                Aneesh
-              </a>
+              &copy; {new Date().getFullYear()} EcoNexus.
             </div>
             <div className="flex gap-6 text-sm">
               <a href="#" className="text-gray-400 hover:text-white transition-colors">

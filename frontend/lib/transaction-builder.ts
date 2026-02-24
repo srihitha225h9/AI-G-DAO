@@ -12,6 +12,8 @@ export interface TransactionResult {
   globalStateDelta?: any[]
   localStateDelta?: any[]
   logs?: string[]
+  // Optional proposal id created by the transaction (demo/prod returned value)
+  proposalId?: number
 }
 
 export interface TransactionOptions {

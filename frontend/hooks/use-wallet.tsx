@@ -88,6 +88,16 @@ function useWallet(): WalletState {
       // Fetch balance
       await fetchBalance(account)
       
+      // Auto-join DAO when wallet connects
+      try {
+        // Import dynamically to avoid circular dependency
+        const { useClimateDAO } = await import('@/hooks/use-climate-dao')
+        // Note: This is a simplified approach. In production, you'd handle this in a component
+        console.log('✅ Wallet connected. User can now join DAO from dashboard.')
+      } catch (err) {
+        console.log('DAO join will be available from dashboard')
+      }
+      
     } catch (err: any) {
       console.error('Wallet connection failed:', err)
       

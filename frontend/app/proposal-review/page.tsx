@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -32,6 +32,64 @@ export default function ProposalReviewPage() {
     category: "",
     location: "",
   })
+
+  const [draftProposalId, setDraftProposalId] = useState<number | null>(null)
+
+  // Save AI analysis to the proposal record when we get results for a known draft
+  useEffect(() => {
+    try {
+      if (!draftProposalId || !reviewResult) return
+      // Persist the AI review for this proposal
+      localStorage.setItem(`proposal_ai_${draftProposalId}`, JSON.stringify(reviewResult))
+
+      // Update stored proposals aiScore (scale 0-100 -> 0-10)
+      const stored = localStorage.getItem('climate_dao_proposals')
+      if (stored) {
+        const proposals = JSON.parse(stored)
+        const idx = proposals.findIndex((p: any) => p.id === draftProposalId)
+        if (idx >= 0) {
+          proposals[idx].aiScore = Math.round(reviewResult.score / 10)
+          localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals))
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to persist AI review for proposal:', err)
+    }
+  }, [reviewResult, draftProposalId])
+
+  // Prefill form from draft (if present) and auto-run analysis
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return
+      const draft = sessionStorage.getItem('proposalDraft')
+      if (!draft) return
+      const parsed = JSON.parse(draft)
+      setFormData({
+        projectTitle: parsed.title || '',
+        description: parsed.description || '',
+        fundingAmount: parsed.fundingAmount ? String(parsed.fundingAmount) : '',
+        duration: parsed.duration || '',
+        expectedImpact: parsed.expectedImpact || '',
+        category: parsed.category || '',
+        location: parsed.location || ''
+      })
+
+      // Trigger AI analysis with the draft
+      analyzeProposalData({
+        title: parsed.title || '',
+        description: parsed.description || '',
+        category: parsed.category || 'general',
+        fundingAmount: parsed.fundingAmount ? String(parsed.fundingAmount) : '0',
+        expectedImpact: parsed.expectedImpact || 'To be determined',
+        location: parsed.location || 'Global'
+      })
+
+      // Remove draft after consuming it
+      sessionStorage.removeItem('proposalDraft')
+    } catch (err) {
+      console.warn('Failed to load proposal draft:', err)
+    }
+  }, [])
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
