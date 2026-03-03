@@ -14,6 +14,8 @@ import { useRouter } from "next/navigation"
 import { useLoading } from "@/hooks/use-loading"
 import dynamic from "next/dynamic"
 import { TransactionResult } from "@/lib/transaction-builder"
+import { checkDuplicateProposal } from "@/lib/duplicate-detection"
+import { climateDAOQuery } from "@/lib/blockchain-queries"
 
 // Lazy load transaction components to improve initial page load
 const TransactionStatus = dynamic(() => import("@/components/transaction-status").then(mod => ({ default: mod.TransactionStatus })), {
@@ -73,6 +75,37 @@ export function SubmitProposalPage() {
       alert("Please connect your wallet first!")
       router.push('/connect-wallet')
       return
+    }
+
+    // Check for duplicate proposals before submission
+    try {
+      const existingProposals = climateDAOQuery.getStoredProposals()
+      console.log('=== DUPLICATE CHECK START ===')
+      console.log('Checking duplicates against', existingProposals.length, 'proposals')
+      console.log('New proposal title:', formData.projectTitle)
+      console.log('Existing titles:', existingProposals.map(p => p.title))
+      
+      if (existingProposals.length > 0) {
+        const duplicateCheck = await checkDuplicateProposal(
+          formData.projectTitle,
+          formData.description,
+          existingProposals
+        )
+        console.log('Duplicate check result:', duplicateCheck)
+        console.log('Is duplicate?', duplicateCheck.isDuplicate)
+        console.log('Similar proposals:', duplicateCheck.similar)
+
+        if (duplicateCheck.isDuplicate || duplicateCheck.similar.length > 0) {
+          const similarTitles = duplicateCheck.similar.map(p => `• ${p.title} (${p.similarity}% similar)\n  Reason: ${p.reason}`).join('\n\n')
+          alert(`⚠️ DUPLICATE PROPOSAL DETECTED\n\nThis proposal is too similar to existing ones!\n\nSimilar proposals:\n${similarTitles}\n\nPlease modify your proposal to make it unique.`)
+          console.log('=== DUPLICATE CHECK: BLOCKED SUBMISSION ===')
+          return
+        }
+      }
+      console.log('=== DUPLICATE CHECK: PASSED ===')
+    } catch (err) {
+      console.error('Duplicate check failed:', err)
+      // Continue with submission if duplicate check fails
     }
 
     // Reset transaction state

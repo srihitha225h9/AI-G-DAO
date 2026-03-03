@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { analyzeProposal, AIReviewResult } from '@/lib/gemini';
+import { checkDuplicateProposal } from '@/lib/duplicate-detection';
+import { climateDAOQuery } from '@/lib/blockchain-queries';
 
 export function useAIReview() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -20,6 +22,15 @@ export function useAIReview() {
     setError(null);
     
     try {
+      // First check for duplicates
+      const existingProposals = climateDAOQuery.getStoredProposals();
+      const duplicateCheck = await checkDuplicateProposal(
+        proposalData.title,
+        proposalData.description,
+        existingProposals
+      );
+
+      // Then analyze the proposal
       const result = await analyzeProposal(
         proposalData.title,
         proposalData.description,
@@ -28,12 +39,21 @@ export function useAIReview() {
         proposalData.expectedImpact,
         proposalData.location
       );
-      setReviewResult(result);
+
+      // Merge duplicate detection results
+      const finalResult = {
+        ...result,
+        isDuplicate: duplicateCheck.isDuplicate,
+        similarProposals: duplicateCheck.similar,
+        modifications: duplicateCheck.suggestions
+      };
+
+      setReviewResult(finalResult);
 
       // Persist analysis to localStorage when a proposalId is provided
       if (proposalId) {
         try {
-          localStorage.setItem(`proposal_ai_${proposalId}`, JSON.stringify(result));
+          localStorage.setItem(`proposal_ai_${proposalId}`, JSON.stringify(finalResult));
 
           // Update stored proposals aiScore (scale 0-100 -> 0-10)
           const stored = localStorage.getItem('climate_dao_proposals');
@@ -41,7 +61,7 @@ export function useAIReview() {
             const proposals = JSON.parse(stored);
             const idx = proposals.findIndex((p: any) => p.id === proposalId);
             if (idx >= 0) {
-              proposals[idx].aiScore = Math.round(result.score / 10);
+              proposals[idx].aiScore = Math.round(finalResult.score / 10);
               localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals));
             }
           }
@@ -50,8 +70,9 @@ export function useAIReview() {
         }
       }
 
-      return result;
+      return finalResult;
     } catch (err) {
+      console.error('AI Analysis error:', err);
       setError(err instanceof Error ? err.message : 'Analysis failed');
       throw err;
     } finally {

@@ -53,7 +53,7 @@ const NotificationsPanel = dynamic(() => import("@/components/notifications-pane
 
 export function DashboardPage() {
   const { isConnected, address, balance, disconnect } = useWalletContext()
-  const { getProposals, getTotalProposals, getBlockchainStats, voteOnProposal, cleanupExpiredProposals, enforceStorageLimits } = useClimateDAO()
+  const { getProposals, getTotalProposals, getBlockchainStats, voteOnProposal, cleanupExpiredProposals, enforceStorageLimits, deleteProposal } = useClimateDAO()
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -281,6 +281,43 @@ export function DashboardPage() {
     const interval = setInterval(checkStorageUsage, 60000) // Check every minute
     return () => clearInterval(interval)
   }, [])
+
+  // Handle deleting a proposal
+  const handleDeleteProposal = async (proposalId: number) => {
+    if (!confirm('Are you sure you want to delete this proposal? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      await deleteProposal(proposalId)
+      
+      // Refresh proposals after deletion
+      const allProposals = await getProposals()
+      setProposals(allProposals)
+      const activeProposals = allProposals.filter(p => p.status === 'active')
+      setActiveProposals(activeProposals)
+      
+      if (address) {
+        const userProposals = allProposals.filter(p => p.creator === address)
+        setUserProposals(userProposals)
+      }
+      
+      setTransactionNotification({
+        isOpen: true,
+        txId: '',
+        message: 'Proposal deleted successfully',
+        type: 'success'
+      })
+    } catch (error) {
+      console.error('Failed to delete proposal:', error)
+      setTransactionNotification({
+        isOpen: true,
+        txId: '',
+        message: error instanceof Error ? error.message : 'Failed to delete proposal',
+        type: 'error'
+      })
+    }
+  }
 
   // Handle voting on proposals - Enhanced with notification system
   const handleVote = async (proposalId: number, voteType: 'for' | 'against') => {
@@ -788,6 +825,17 @@ export function DashboardPage() {
                             <p className="text-white/60 text-xs">AI Score: {proposal.aiScore}/10</p>
                           )}
                         </div>
+                        {!hasVotes && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteProposal(proposal.id)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                            title="Delete proposal (only if no votes)"
+                          >
+                            <XIcon className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );

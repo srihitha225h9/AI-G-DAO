@@ -25,6 +25,40 @@ export function AIReviewDisplay({ review }: AIReviewDisplayProps) {
       </CardHeader>
 
       <CardContent className="space-y-6">
+        {/* Duplicate Warning */}
+        {review.isDuplicate && review.similarProposals && review.similarProposals.length > 0 && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 space-y-3">
+            <h4 className="text-red-400 font-bold flex items-center gap-2">
+              <AlertTriangleIcon className="w-5 h-5" />
+              ⚠️ Similar Proposal Detected
+            </h4>
+            <p className="text-sm text-red-300">
+              This proposal is very similar to existing proposals:
+            </p>
+            <ul className="space-y-2">
+              {review.similarProposals.map((similar, index) => (
+                <li key={index} className="text-sm text-gray-300 bg-white/5 p-2 rounded">
+                  <div className="font-medium">#{similar.id}: {similar.title}</div>
+                  <div className="text-xs text-red-400">Similarity: {similar.similarity}%</div>
+                  <div className="text-xs text-gray-400">{similar.reason}</div>
+                </li>
+              ))}
+            </ul>
+            {review.modifications && review.modifications.length > 0 && (
+              <div className="mt-3">
+                <p className="text-sm text-yellow-300 font-medium mb-2">💡 Suggested Modifications:</p>
+                <ul className="space-y-1">
+                  {review.modifications.map((mod, index) => (
+                    <li key={index} className="text-sm text-gray-300 pl-4">
+                      • {mod}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Overall Score */}
         <div className="space-y-2">
           <div className="flex justify-between items-center">
@@ -103,6 +137,89 @@ export function AIReviewDisplay({ review }: AIReviewDisplayProps) {
               {review.suggestions.map((suggestion, index) => (
                 <li key={index} className="text-sm text-gray-300 pl-4">
                   • {suggestion}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Real-World Comparison */}
+        {review.realWorldComparison && (
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 space-y-2">
+            <h4 className="text-blue-400 font-medium flex items-center gap-2">
+              🌍 Real-World Comparison
+            </h4>
+            <p className="text-sm text-gray-300">
+              {review.realWorldComparison}
+            </p>
+          </div>
+        )}
+
+        {/* Novelty Status */}
+        <div className={`${review.isNovel ? 'bg-green-500/10 border-green-500/30' : 'bg-yellow-500/10 border-yellow-500/30'} border rounded-lg p-4`}>
+          <h4 className={`${review.isNovel ? 'text-green-400' : 'text-yellow-400'} font-medium flex items-center gap-2`}>
+            {review.isNovel ? '✨ Novel Project' : '📋 Similar Projects Exist'}
+          </h4>
+          <p className="text-sm text-gray-300 mt-2">
+            {review.isNovel 
+              ? 'This appears to be a unique and innovative approach to climate action!'
+              : 'Similar real-world projects already exist. See details below for how to differentiate your proposal.'}
+          </p>
+        </div>
+
+        {/* Existing Real-World Projects */}
+        {review.existingProjects && review.existingProjects.length > 0 && (
+          <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 space-y-3">
+            <h4 className="text-orange-400 font-medium flex items-center gap-2">
+              🏢 Existing Real-World Projects
+            </h4>
+            <p className="text-xs text-gray-400 mb-3">
+              These projects are already working on similar ideas. Learn from them!
+            </p>
+            <div className="space-y-3">
+              {review.existingProjects.map((project, index) => (
+                <div key={index} className="bg-white/5 rounded-lg p-3 space-y-2">
+                  <div className="font-medium text-white">{project.name}</div>
+                  <div className="text-sm text-gray-300">{project.description}</div>
+                  <div className="flex gap-4 text-xs">
+                    <span className="text-orange-400">Similarity: {project.similarity}</span>
+                    <span className="text-green-400">Status: {project.successRate}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Innovative Add-ons */}
+        {review.innovativeAddons && review.innovativeAddons.length > 0 && (
+          <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4 space-y-3">
+            <h4 className="text-cyan-400 font-medium flex items-center gap-2">
+              💡 Innovative Add-ons to Make Your Proposal Unique
+            </h4>
+            <p className="text-xs text-gray-400 mb-2">
+              Consider adding these innovations to differentiate from existing projects:
+            </p>
+            <ul className="space-y-2">
+              {review.innovativeAddons.map((addon, index) => (
+                <li key={index} className="text-sm text-gray-300 bg-white/5 p-3 rounded">
+                  <span className="text-cyan-400 font-medium">💎</span> {addon}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Recommended Changes */}
+        {review.recommendedChanges && review.recommendedChanges.length > 0 && (
+          <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 space-y-2">
+            <h4 className="text-purple-400 font-medium flex items-center gap-2">
+              ✨ Recommended Changes
+            </h4>
+            <ul className="space-y-1">
+              {review.recommendedChanges.map((change, index) => (
+                <li key={index} className="text-sm text-gray-300 pl-4">
+                  • {change}
                 </li>
               ))}
             </ul>
