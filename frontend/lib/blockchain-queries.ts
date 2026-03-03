@@ -3,6 +3,7 @@
 import algosdk from 'algosdk';
 import { algodClient, CONTRACT_IDS } from '@/lib/algorand';
 import { memberTracker } from '@/lib/member-tracker';
+import { supabase } from '@/lib/supabase';
 
 export interface BlockchainProposal {
   id: number;
@@ -221,7 +222,7 @@ export class ClimateDAOQueryService {
   }
 
   /**
-   * Store a new proposal on-chain in a box
+   * Store a new proposal in Supabase database
    */
   async storeProposal(proposal: {
     id: number;
@@ -234,47 +235,25 @@ export class ClimateDAOQueryService {
     aiScore?: number;
   }): Promise<boolean> {
     try {
-      // Check rate limits
-      const rateCheck = this.canUserSubmitProposal(proposal.creator);
-      if (!rateCheck.canSubmit) {
-        console.error('Rate limit check failed:', rateCheck.reason);
-        throw new Error(rateCheck.reason || 'Proposal submission limit reached');
-      }
-      
-      // Create the proposal data to store
-      const proposalData = {
-        id: proposal.id,
-        title: proposal.title,
-        description: proposal.description,
-        creator: proposal.creator,
-        fundingAmount: proposal.fundingAmount,
-        voteYes: 0,
-        voteNo: 0,
-        status: 'active' as const,
-        endTime: proposal.endTime,
-        category: proposal.category,
-        aiScore: proposal.aiScore || 0,
-        creationTime: Date.now(),
-        preservedBy: [proposal.creator]
-      };
+      const { data, error } = await supabase
+        .from('proposals')
+        .insert([{
+          id: proposal.id,
+          title: proposal.title,
+          description: proposal.description,
+          creator: proposal.creator,
+          funding_amount: proposal.fundingAmount,
+          vote_yes: 0,
+          vote_no: 0,
+          status: 'active',
+          end_time: proposal.endTime,
+          category: proposal.category,
+          ai_score: proposal.aiScore || 0,
+          creation_time: Date.now()
+        }]);
 
-      // Store in browser localStorage as fallback/cache
-      const storageKey = `proposal_${proposal.id}`;
-      localStorage.setItem(storageKey, JSON.stringify(proposalData));
-      
-      // Also store in a central proposals list
-      let existingProposals: BlockchainProposal[] = [];
-      try {
-        existingProposals = this.getStoredProposals();
-      } catch (error) {
-        console.warn('Could not get existing proposals, starting fresh:', error);
-        existingProposals = [];
-      }
-      
-      const updatedProposals = [...existingProposals, proposalData];
-      localStorage.setItem('climate_dao_proposals', JSON.stringify(updatedProposals));
-      
-      console.log(`Proposal ${proposal.id} stored successfully`);
+      if (error) throw error;
+      console.log(`Proposal ${proposal.id} stored in database`);
       return true;
     } catch (error) {
       console.error('Error storing proposal:', error);
@@ -283,63 +262,76 @@ export class ClimateDAOQueryService {
   }
 
   /**
-   * Get proposals from localStorage cache
+   * Get proposals from Supabase database
    */
-  getStoredProposals(): BlockchainProposal[] {
+  async getStoredProposals(): Promise<BlockchainProposal[]> {
     try {
-      const stored = localStorage.getItem('climate_dao_proposals');
-      return stored ? JSON.parse(stored) : [];
+      const { data, error } = await supabase
+        .from('proposals')
+        .select('*')
+        .order('creation_time', { ascending: false });
+
+      if (error) throw error;
+      
+      return (data || []).map(p => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        creator: p.creator,
+        fundingAmount: p.funding_amount,
+        voteYes: p.vote_yes,
+        voteNo: p.vote_no,
+        status: p.status,
+        endTime: p.end_time,
+        category: p.category,
+        aiScore: p.ai_score,
+        creationTime: p.creation_time
+      }));
     } catch (error) {
-      console.error('Error reading stored proposals:', error);
+      console.error('Error reading proposals:', error);
       return [];
     }
   }
 
   /**
-   * Store a vote for a proposal
+   * Store a vote in Supabase database
    */
   async storeVote(proposalId: number, vote: 'for' | 'against', userAddress: string, txId: string): Promise<boolean> {
     try {
-      // Create voting record
-      const votingRecord: VotingRecord = {
-        proposalId,
-        proposalTitle: `Proposal #${proposalId}`, // We'll update this with real title
-        vote,
-        timestamp: Math.floor(Date.now() / 1000),
-        txId,
-        confirmedRound: 1 // Placeholder
-      };
+      // Check if already voted
+      const { data: existing } = await supabase
+        .from('votes')
+        .select('*')
+        .eq('proposal_id', proposalId)
+        .eq('voter_address', userAddress)
+        .single();
 
-      // Store the vote
-      const voteKey = `vote_${userAddress}_${proposalId}`;
-      localStorage.setItem(voteKey, JSON.stringify(votingRecord));
-
-      // Update proposal vote counts
-      const proposals = this.getStoredProposals();
-      const proposalIndex = proposals.findIndex(p => p.id === proposalId);
-      
-      if (proposalIndex >= 0) {
-        // Update the proposal title in voting record
-        votingRecord.proposalTitle = proposals[proposalIndex].title;
-        localStorage.setItem(voteKey, JSON.stringify(votingRecord));
-        
-        // Update vote counts
-        if (vote === 'for') {
-          proposals[proposalIndex].voteYes += 1;
-        } else {
-          proposals[proposalIndex].voteNo += 1;
-        }
-        
-        // Save updated proposals
-        localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals));
+      if (existing) {
+        console.log('User already voted');
+        return false;
       }
 
-      // Store in user's voting history
-      const userVotesKey = `user_votes_${userAddress}`;
-      const existingVotes = localStorage.getItem(userVotesKey);
-      const userVotes = existingVotes ? JSON.parse(existingVotes) : [];
-      userVotes.push(votingRecord);
-      localStorage.setItem(userVotesKey, JSON.stringify(userVotes));
+      // Insert vote
+      const { error: voteError } = await supabase
+        .from('votes')
+        .insert([{
+          proposal_id: proposalId,
+          voter_address: userAddress,
+          vote,
+          tx_id: txId,
+          timestamp: Date.now()
+        }]);
+
+      if (voteError) throw voteError;
+
+      // Update proposal vote count
+      const field = vote === 'for' ? 'vote_yes' : 'vote_no';
+      const { error: updateError } = await supabase.rpc('increment_vote', {
+        proposal_id: proposalId,
+        vote_field: field
+      });
+
+      if (updateError) throw updateError;
 
       console.log(`Vote stored: ${vote} on proposal ${proposalId}`);
       return true;
@@ -1008,20 +1000,28 @@ export class ClimateDAOQueryService {
   }
 
   /**
-   * Get user's voting history
+   * Get user's voting history from Supabase
    */
   async getUserVotingHistory(userAddress: string): Promise<VotingRecord[]> {
     try {
       if (!userAddress) return [];
       
-      // Get real voting history from localStorage
-      const storedVotes = localStorage.getItem(`user_votes_${userAddress}`);
-      if (!storedVotes) return [];
+      const { data, error } = await supabase
+        .from('votes')
+        .select('*, proposals(title)')
+        .eq('voter_address', userAddress)
+        .order('timestamp', { ascending: false });
+
+      if (error) throw error;
       
-      const userVotes: VotingRecord[] = JSON.parse(storedVotes);
-      
-      // Sort by timestamp (most recent first)
-      return userVotes.sort((a, b) => b.timestamp - a.timestamp);
+      return (data || []).map(v => ({
+        proposalId: v.proposal_id,
+        proposalTitle: v.proposals?.title || `Proposal #${v.proposal_id}`,
+        vote: v.vote,
+        timestamp: v.timestamp,
+        txId: v.tx_id,
+        confirmedRound: 1
+      }));
     } catch (error) {
       console.error('Error fetching voting history:', error);
       return [];
