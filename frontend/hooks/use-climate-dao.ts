@@ -560,9 +560,9 @@ export function useClimateDAO() {
   /**
    * Get user's proposal submission limits
    */
-  const getUserProposalLimits = useCallback((userAddress: string) => {
+  const getUserProposalLimits = useCallback(async (userAddress: string) => {
     try {
-      return climateDAOQuery.getUserProposalLimits(userAddress);
+      return await climateDAOQuery.getUserProposalLimits(userAddress);
     } catch (error) {
       console.error('Error getting user proposal limits:', error);
       setError('Failed to get proposal limits');

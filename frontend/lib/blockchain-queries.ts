@@ -171,16 +171,15 @@ export class ClimateDAOQueryService {
   /**
    * Check if user can submit a proposal (rate limiting)
    */
-  private canUserSubmitProposal(userAddress: string): { canSubmit: boolean; reason?: string } {
-    // Development-friendly limits for testing
+  private async canUserSubmitProposal(userAddress: string): Promise<{ canSubmit: boolean; reason?: string }> {
     const LIMITS = {
-      maxPerUser: 50,           // Increased for testing
-      maxPerDay: 20,            // Increased for testing  
-      minTimeBetween: 60000,    // Reduced to 1 minute for testing (60000 ms)
+      maxPerUser: 50,
+      maxPerDay: 20,
+      minTimeBetween: 60000,
     };
 
     try {
-      const existingProposals = this.getStoredProposals();
+      const existingProposals = await this.getStoredProposals();
       const userProposals = existingProposals.filter(p => p.creator === userAddress);
       
       // Check total proposal limit
@@ -398,8 +397,7 @@ export class ClimateDAOQueryService {
    */
   async getProposal(proposalId: number): Promise<BlockchainProposal | null> {
     try {
-      // First check localStorage for stored proposals
-      const storedProposals = this.getStoredProposals();
+      const storedProposals = await this.getStoredProposals();
       const storedProposal = storedProposals.find(p => p.id === proposalId);
       
       if (storedProposal) {
@@ -440,8 +438,7 @@ export class ClimateDAOQueryService {
     offset?: number;
   }): Promise<BlockchainProposal[]> {
     try {
-      // Get real stored proposals from localStorage
-      let proposals = this.getStoredProposals();
+      let proposals = await this.getStoredProposals();
       
       console.log(`Found ${proposals.length} stored proposals`);
 
@@ -489,7 +486,7 @@ export class ClimateDAOQueryService {
       return filteredProposals;
     } catch (error) {
       console.error('Error fetching proposals:', error);
-      return this.getStoredProposals(); // Always fallback to stored proposals
+      return await this.getStoredProposals();
     }
   }
 
@@ -524,7 +521,7 @@ export class ClimateDAOQueryService {
   /**
    * Get user's proposal submission limits and current usage
    */
-  getUserProposalLimits(userAddress: string): {
+  async getUserProposalLimits(userAddress: string): Promise<{
     maxPerUser: number;
     maxPerDay: number;
     currentTotal: number;
@@ -532,15 +529,15 @@ export class ClimateDAOQueryService {
     canSubmitNext: Date;
     remainingToday: number;
     remainingTotal: number;
-  } {
+  }> {
     const LIMITS = {
       maxPerUser: 10,
       maxPerDay: 3,
-      minTimeBetween: 1800000, // 30 minutes
+      minTimeBetween: 1800000,
     };
 
     try {
-      const existingProposals = this.getStoredProposals();
+      const existingProposals = await this.getStoredProposals();
       const userProposals = existingProposals.filter(p => p.creator === userAddress);
       
       const now = Date.now();
@@ -585,7 +582,7 @@ export class ClimateDAOQueryService {
    */
   async cleanupExpiredProposals(daysToKeep: number = 7): Promise<{ removedCount: number; keptCount: number }> {
     try {
-      const proposals = this.getStoredProposals();
+      const proposals = await this.getStoredProposals();
       const now = Date.now();
       const daysInMs = daysToKeep * 24 * 60 * 60 * 1000; // Convert days to milliseconds
       
@@ -666,14 +663,13 @@ export class ClimateDAOQueryService {
     proposalsCount?: number;
   }> {
     const STORAGE_LIMITS = {
-      maxProposals: 30,        // Reduced for 200KB limit
-      maxVotes: 50,           // Limit vote records
-      cleanupThreshold: 180,   // Cleanup at 180KB (90% of 200KB)
+      maxProposals: 30,
+      maxVotes: 50,
+      cleanupThreshold: 180,
     };
     
     try {
-      // Get current storage data
-      const proposals = this.getStoredProposals();
+      const proposals = await this.getStoredProposals();
       const votes = JSON.parse(localStorage.getItem('climate_dao_votes') || '[]');
       const userHistory = JSON.parse(localStorage.getItem('climate_dao_user_history') || '[]');
       
