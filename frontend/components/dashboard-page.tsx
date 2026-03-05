@@ -38,6 +38,9 @@ import { favoritesManager } from "@/lib/proposal-favorites"
 import dynamic from "next/dynamic"
 
 // Lazy load heavy components to improve initial page load
+const PublicVotingHistory = dynamic(() => import("@/components/voting-history").then(mod => ({ default: mod.VotingHistory })), {
+  loading: () => <div className="text-white/40 text-xs">Loading votes...</div>
+})
 const VotingHistory = dynamic(() => import("@/components/voting-history").then(mod => ({ default: mod.VotingHistory })), {
   loading: () => <CardSkeleton />
 })
@@ -732,6 +735,11 @@ export function DashboardPage() {
                           >
                             {votingProposalId === proposal.id ? 'Voting...' : '✗ No'}
                           </Button>
+                        </div>
+                        
+                        {/* Voting History for this proposal */}
+                        <div className="mt-4">
+                          <PublicVotingHistory proposalId={proposal.id} autoRefresh={true} />
                         </div>
                       </div>
                     );

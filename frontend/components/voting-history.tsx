@@ -1,156 +1,144 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { VoteIcon, CheckCircleIcon, XCircleIcon, ClockIcon, ExternalLinkIcon, LoaderIcon } from 'lucide-react';
-import { useWalletContext } from '@/hooks/use-wallet';
-import { useClimateDAO } from '@/hooks/use-climate-dao';
-import { VotingRecord } from '@/lib/blockchain-queries';
+import { ThumbsUp, ThumbsDown, Users } from 'lucide-react';
 
-export function VotingHistory() {
-  const { address, isConnected } = useWalletContext();
-  const { getUserVotingHistory } = useClimateDAO();
-  const [voteHistory, setVoteHistory] = useState<VotingRecord[]>([]);
+interface Vote {
+  id: string;
+  proposal_id: number;
+  voter_address: string;
+  vote: 'for' | 'against';
+  timestamp: number;
+  tx_id: string;
+}
+
+interface VotingHistoryProps {
+  proposalId: number;
+  autoRefresh?: boolean;
+}
+
+export function VotingHistory({ proposalId, autoRefresh = true }: VotingHistoryProps) {
+  const [votes, setVotes] = useState<Vote[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchVotingHistory = async () => {
-      if (!isConnected || !address) {
-        setLoading(false);
-        return;
+  const fetchVotes = async () => {
+    try {
+      const response = await fetch(`/api/get-votes?proposalId=${proposalId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setVotes(data);
       }
-
-      try {
-        setLoading(true);
-        
-        // Fetch real voting history from blockchain
-        const history = await getUserVotingHistory();
-        setVoteHistory(history);
-      } catch (error) {
-        console.error('Failed to fetch voting history:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchVotingHistory();
-  }, [isConnected, address, getUserVotingHistory]);
-
-  const formatTimeAgo = (timestamp: number) => {
-    const now = Date.now();
-    const diff = now - timestamp;
-    const hours = Math.floor(diff / (60 * 60 * 1000));
-    const days = Math.floor(hours / 24);
-
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    return 'Just now';
+    } catch (error) {
+      console.error('Error fetching votes:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (!isConnected) {
+  useEffect(() => {
+    fetchVotes();
+
+    if (autoRefresh) {
+      const interval = setInterval(fetchVotes, 5000); // Refresh every 5 seconds
+      return () => clearInterval(interval);
+    }
+  }, [proposalId, autoRefresh]);
+
+  const forVotes = votes.filter(v => v.vote === 'for');
+  const againstVotes = votes.filter(v => v.vote === 'against');
+
+  const formatAddress = (address: string) => {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const formatTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString();
+  };
+
+  if (loading) {
     return (
-      <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl">
-        <CardHeader>
-          <CardTitle className="text-white text-xl flex items-center gap-3">
-            <VoteIcon className="w-6 h-6 text-blue-400" />
-            Voting History
-          </CardTitle>
-          <CardDescription className="text-white/60">
-            Connect your wallet to view your voting history
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-center py-8">
-          <VoteIcon className="w-16 h-16 text-white/20 mx-auto mb-4" />
-          <p className="text-white/60">Please connect your wallet to view voting history</p>
+      <Card className="bg-gray-900/50 border-gray-800">
+        <CardContent className="p-6">
+          <p className="text-gray-400">Loading votes...</p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl">
+    <Card className="bg-gray-900/50 border-gray-800">
       <CardHeader>
-        <CardTitle className="text-white text-xl flex items-center gap-3">
-          <VoteIcon className="w-6 h-6 text-blue-400" />
-          My Voting History
+        <CardTitle className="flex items-center gap-2 text-white">
+          <Users className="w-5 h-5" />
+          Voting History ({votes.length} votes)
         </CardTitle>
-        <CardDescription className="text-white/60">
-          Your recent votes on DAO proposals
-        </CardDescription>
       </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="text-center py-8">
-            <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-white/60">Loading voting history...</p>
+      <CardContent className="space-y-4">
+        {/* Summary */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+            <div className="flex items-center gap-2 text-green-400 mb-2">
+              <ThumbsUp className="w-4 h-4" />
+              <span className="font-semibold">For</span>
+            </div>
+            <p className="text-2xl font-bold text-white">{forVotes.length}</p>
           </div>
-        ) : voteHistory.length > 0 ? (
-          <div className="space-y-4">
-            {voteHistory.map((vote) => (
-              <div key={vote.txId} className="bg-white/5 rounded-xl p-4 border border-white/10 hover:bg-white/10 transition-all duration-300">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    {vote.vote === 'for' ? (
-                      <div className="w-10 h-10 bg-green-500/20 rounded-xl flex items-center justify-center">
-                        <CheckCircleIcon className="w-5 h-5 text-green-400" />
-                      </div>
-                    ) : (
-                      <div className="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center">
-                        <XCircleIcon className="w-5 h-5 text-red-400" />
-                      </div>
-                    )}
-                    <div>
-                      <h4 className="text-white font-medium text-sm">{vote.proposalTitle}</h4>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge className={
-                          vote.vote === 'for' 
-                            ? 'bg-green-500/20 text-green-400 border-green-500/50' 
-                            : 'bg-red-500/20 text-red-400 border-red-500/50'
-                        }>
-                          Voted {vote.vote.toUpperCase()}
-                        </Badge>
-                        <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/50">
-                          Confirmed
-                        </Badge>
-                      </div>
-                    </div>
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+            <div className="flex items-center gap-2 text-red-400 mb-2">
+              <ThumbsDown className="w-4 h-4" />
+              <span className="font-semibold">Against</span>
+            </div>
+            <p className="text-2xl font-bold text-white">{againstVotes.length}</p>
+          </div>
+        </div>
+
+        {/* Vote List */}
+        {votes.length === 0 ? (
+          <p className="text-gray-400 text-center py-4">No votes yet</p>
+        ) : (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {votes.map((vote) => (
+              <div
+                key={vote.id}
+                className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 flex items-center justify-between"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <code className="text-sm text-blue-400 font-mono">
+                      {formatAddress(vote.voter_address)}
+                    </code>
+                    <Badge
+                      variant={vote.vote === 'for' ? 'default' : 'destructive'}
+                      className={
+                        vote.vote === 'for'
+                          ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                          : 'bg-red-500/20 text-red-400 border-red-500/30'
+                      }
+                    >
+                      {vote.vote === 'for' ? (
+                        <ThumbsUp className="w-3 h-3 mr-1" />
+                      ) : (
+                        <ThumbsDown className="w-3 h-3 mr-1" />
+                      )}
+                      {vote.vote === 'for' ? 'For' : 'Against'}
+                    </Badge>
                   </div>
-                  <div className="text-right text-sm">
-                    <div className="text-white/60">{formatTimeAgo(vote.timestamp * 1000)}</div>
-                    <div className="text-white/40 text-xs">Cost: 0.01 ALGO</div>
-                  </div>
+                  <p className="text-xs text-gray-500">{formatTime(vote.timestamp)}</p>
                 </div>
-                
-                <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                  <span className="text-xs text-white/40">Proposal #{vote.proposalId}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
-                    onClick={() => window.open(`https://lora.algokit.io/testnet/transaction/${vote.txId}`, '_blank')}
+                {vote.tx_id && (
+                  <a
+                    href={`https://testnet.algoexplorer.io/tx/${vote.tx_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-400 hover:text-blue-300"
                   >
-                    <ExternalLinkIcon className="w-3 h-3 mr-1" />
                     View TX
-                  </Button>
-                </div>
+                  </a>
+                )}
               </div>
             ))}
-            
-            {voteHistory.length >= 3 && (
-              <div className="text-center pt-4">
-                <Button variant="outline" size="sm" className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10">
-                  View All Votes
-                </Button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="text-center py-8">
-            <VoteIcon className="w-16 h-16 text-white/20 mx-auto mb-4" />
-            <p className="text-white/60 mb-2">No votes cast yet</p>
-            <p className="text-white/40 text-sm">Your voting history will appear here after you vote on proposals</p>
           </div>
         )}
       </CardContent>
