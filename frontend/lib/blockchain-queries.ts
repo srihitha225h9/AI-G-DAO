@@ -384,17 +384,7 @@ export class ClimateDAOQueryService {
    */
   async getTotalMembers(): Promise<number> {
     try {
-      // Use API member tracker for global count
-      const count = await memberTracker.getMemberCount();
-      if (count > 0) return count;
-      
-      // Fallback to contract if API fails
-      if (!(await this.isContractDeployed())) {
-        return 0;
-      }
-
-      const globalState = await this.getGlobalState();
-      return globalState.total_members || 0;
+      return await memberTracker.getMemberCount();
     } catch (error) {
       console.error('Error getting total members:', error);
       return 0;
@@ -605,30 +595,8 @@ export class ClimateDAOQueryService {
         return proposal;
       });
 
-      // Filter out expired proposals that have been expired for more than the specified days
-      // but always keep proposals that are preserved (e.g., created by a user who should see them forever)
-      const proposalsToKeep = updatedProposals.filter(proposal => {
-        // If proposal is explicitly preserved for any user, do not remove it
-        if (proposal.preservedBy && proposal.preservedBy.length > 0) {
-          return true;
-        }
-
-        if (proposal.status === 'expired') {
-          const expiredFor = now - proposal.endTime;
-          const shouldRemove = expiredFor > daysInMs;
-
-          if (shouldRemove) {
-            console.log(`Removing expired proposal: "${proposal.title}" (expired ${Math.floor(expiredFor / (24 * 60 * 60 * 1000))} days ago)`);
-
-            // Clean up associated proposal-aggregated vote data only
-            this.cleanupProposalVoteData(proposal.id);
-          }
-
-          return !shouldRemove;
-        }
-
-        return true; // Keep all non-expired proposals
-      });
+      // Keep all proposals — never auto-delete so they remain visible after disconnect/reconnect
+      const proposalsToKeep = updatedProposals;
 
       const removedCount = updatedProposals.length - proposalsToKeep.length;
       const keptCount = proposalsToKeep.length;
@@ -697,11 +665,10 @@ export class ClimateDAOQueryService {
       if (totalSize > STORAGE_LIMITS.cleanupThreshold * 1024) {
         console.log('⚠️  Storage limit reached, performing aggressive cleanup...');
         
-        // 1. Keep only most recent proposals (sorted by creation time)
+        // 1. Keep all proposals (never delete — they must persist across disconnect/reconnect)
         const recentProposals = proposals
-          .filter(p => p.creationTime) // Ensure timestamp exists
-          .sort((a, b) => new Date(b.creationTime).getTime() - new Date(a.creationTime).getTime())
-          .slice(0, STORAGE_LIMITS.maxProposals);
+          .filter(p => p.creationTime)
+          .sort((a, b) => new Date(b.creationTime).getTime() - new Date(a.creationTime).getTime());
         
         // 2. Compress vote data - keep only essential info
         const compressedVotes = votes
@@ -766,8 +733,7 @@ export class ClimateDAOQueryService {
    */
   async getStats(userAddress?: string): Promise<BlockchainStats> {
     try {
-      const [totalProposals, totalMembers, allProposals] = await Promise.all([
-        this.getTotalProposals(),
+      const [totalMembers, allProposals] = await Promise.all([
         this.getTotalMembers(),
         this.getProposals()
       ]);
@@ -778,14 +744,12 @@ export class ClimateDAOQueryService {
       let userVoteCount = 0;
       
       if (userAddress) {
-        [userProposalCount, userVoteCount] = await Promise.all([
-          this.getUserProposalCount(userAddress),
-          this.getUserVoteCount(userAddress)
-        ]);
+        userProposalCount = allProposals.filter(p => p.creator === userAddress).length;
+        userVoteCount = await this.getUserVoteCount(userAddress);
       }
       
       return {
-        totalProposals,
+        totalProposals: allProposals.length,
         totalMembers,
         activeProposals,
         userProposalCount,

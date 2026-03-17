@@ -35,27 +35,33 @@ export default function ProposalReviewPage() {
 
   const [draftProposalId, setDraftProposalId] = useState<number | null>(null)
 
-  // Save AI analysis to the proposal record when we get results for a known draft
+  // Save AI analysis whenever reviewResult changes — always overwrite with latest
   useEffect(() => {
     try {
-      if (!draftProposalId || !reviewResult) return
-      // Persist the AI review for this proposal
-      localStorage.setItem(`proposal_ai_${draftProposalId}`, JSON.stringify(reviewResult))
+      if (!reviewResult) return
 
-      // Update stored proposals aiScore (scale 0-100 -> 0-10)
-      const stored = localStorage.getItem('climate_dao_proposals')
-      if (stored) {
-        const proposals = JSON.parse(stored)
-        const idx = proposals.findIndex((p: any) => p.id === draftProposalId)
-        if (idx >= 0) {
-          proposals[idx].aiScore = Math.round(reviewResult.score / 10)
-          localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals))
+      // If we have a known proposal ID, persist the latest analysis against it
+      if (draftProposalId) {
+        localStorage.setItem(`proposal_ai_${draftProposalId}`, JSON.stringify(reviewResult))
+
+        // Also update the stored proposal's description and aiScore with the latest re-analysed data
+        const stored = localStorage.getItem('climate_dao_proposals')
+        if (stored) {
+          const proposals = JSON.parse(stored)
+          const idx = proposals.findIndex((p: any) => p.id === draftProposalId)
+          if (idx >= 0) {
+            proposals[idx].aiScore = Math.round(reviewResult.score / 10)
+            // Persist the latest description used for analysis
+            if (formData.description) proposals[idx].description = formData.description
+            if (formData.expectedImpact) proposals[idx].expectedImpact = formData.expectedImpact
+            localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals))
+          }
         }
       }
     } catch (err) {
       console.warn('Failed to persist AI review for proposal:', err)
     }
-  }, [reviewResult, draftProposalId])
+  }, [reviewResult, draftProposalId, formData.description, formData.expectedImpact])
 
   // Prefill form from draft (if present) and auto-run analysis
   useEffect(() => {
@@ -64,6 +70,10 @@ export default function ProposalReviewPage() {
       const draft = sessionStorage.getItem('proposalDraft')
       if (!draft) return
       const parsed = JSON.parse(draft)
+
+      // Capture the proposal ID so all subsequent re-analyses save against it
+      if (parsed.proposalId) setDraftProposalId(parsed.proposalId)
+
       setFormData({
         projectTitle: parsed.title || '',
         description: parsed.description || '',

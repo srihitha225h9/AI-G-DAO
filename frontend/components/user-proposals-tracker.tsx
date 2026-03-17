@@ -153,11 +153,6 @@ export function UserProposalsTracker() {
                             <Badge className={getStatusColor(proposal.status)}>
                               {proposal.status.toUpperCase()}
                             </Badge>
-                            {proposal.aiScore && (
-                              <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/50">
-                                AI Score: {proposal.aiScore}/10
-                              </Badge>
-                            )}
                           </div>
                         </div>
                       </div>

@@ -38,7 +38,10 @@ export default function ProposalDetailPage() {
         // Load persisted AI review from localStorage if present
         try {
           const stored = localStorage.getItem(`proposal_ai_${proposalId}`)
-          if (stored) setAiReview(JSON.parse(stored))
+          if (stored) {
+            const parsed = JSON.parse(stored)
+            setAiReview(parsed)
+          }
         } catch (err) {
           console.warn('Failed to load AI review for proposal:', err)
         }

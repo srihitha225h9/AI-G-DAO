@@ -36,6 +36,7 @@ import { filterProposalsByCategories, getCategoryById } from "@/lib/proposal-cat
 import { ProposalSearchEngine, SearchResult } from "@/lib/proposal-search"
 import { favoritesManager } from "@/lib/proposal-favorites"
 import dynamic from "next/dynamic"
+import { memberTracker } from '@/lib/member-tracker'
 
 // Lazy load heavy components to improve initial page load
 const VotingHistory = dynamic(() => import("@/components/voting-history").then(mod => ({ default: mod.VotingHistory })), {
@@ -53,7 +54,7 @@ const NotificationsPanel = dynamic(() => import("@/components/notifications-pane
 
 export function DashboardPage() {
   const { isConnected, address, balance, disconnect } = useWalletContext()
-  const { getProposals, getTotalProposals, getBlockchainStats, voteOnProposal, cleanupExpiredProposals, enforceStorageLimits, deleteProposal } = useClimateDAO()
+  const { getProposals, getTotalProposals, getBlockchainStats, voteOnProposal, deleteProposal } = useClimateDAO()
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -63,8 +64,6 @@ export function DashboardPage() {
   const [userProposals, setUserProposals] = useState<any[]>([])
   const [showMyProposals, setShowMyProposals] = useState(false)
   const [totalProposalsCount, setTotalProposalsCount] = useState(0)
-  const [lastCleanup, setLastCleanup] = useState<{ removedCount: number; timestamp: number } | null>(null)
-  const [storageUsage, setStorageUsage] = useState<{size: number, limit: number} | null>(null)
   
   // NEW: Filtering state
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
@@ -93,7 +92,7 @@ export function DashboardPage() {
   })
   const [blockchainStats, setBlockchainStats] = useState({
     totalProposals: 0,
-    totalMembers: 0,
+    totalMembers: typeof window !== 'undefined' ? memberTracker.getCachedCount() : 0,
     activeProposals: 0,
     userProposalCount: 0,
     userVoteCount: 0
@@ -139,6 +138,16 @@ export function DashboardPage() {
     return filtered;
   }, [activeProposals, selectedCategories]);
 
+  // Listen for real-time member count updates (fires when wallet connects)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const count = (e as CustomEvent).detail?.count;
+      if (count) setBlockchainStats(prev => ({ ...prev, totalMembers: count }));
+    };
+    window.addEventListener('member-count-updated', handler);
+    return () => window.removeEventListener('member-count-updated', handler);
+  }, [])
+
   // Validate wallet connection and address format for Algorand
   useEffect(() => {
     if (isConnected && address) {
@@ -168,52 +177,26 @@ export function DashboardPage() {
     return unsubscribe
   }, [])
 
-  // Fetch proposals data - optimized with aggressive storage management
+  // Fetch proposals data
   useEffect(() => {
     const fetchProposalData = async () => {
       try {
         setIsLoading(true)
 
-        // 1. FIRST: Enforce aggressive storage limits (200KB constraint)
-        const storageResult = await enforceStorageLimits()
-        if (storageResult.cleaned) {
-          console.log(`🗑️ Storage cleanup: ${storageResult.oldSize}KB → ${storageResult.newSize}KB`)
-          setLastCleanup({ 
-            removedCount: storageResult.proposalsRemoved || 0, 
-            timestamp: Date.now() 
-          })
-        }
-
-        // Update storage usage display
-        setStorageUsage({
-          size: storageResult.currentSize || storageResult.newSize || 0,
-          limit: 200
-        })
-
-        // 2. THEN: Clean up expired proposals (reduced retention to 3 days)
-        const cleanupResult = await cleanupExpiredProposals(3) // Reduced from 7 to 3 days
-        if (cleanupResult.removedCount > 0) {
-          console.log(`🕒 Expired cleanup: Removed ${cleanupResult.removedCount} old proposals`)
-        }
-
-        // 3. Get all proposals in one call and process locally
+        // Get all proposals
         const allProposals = await getProposals()
         setProposals(allProposals)
         
-        // Filter active proposals locally instead of making another API call
         const activeProposals = allProposals.filter(p => p.status === 'active')
         setActiveProposals(activeProposals)
         
-        // Filter user proposals locally if connected
         if (address) {
           const userProposals = allProposals.filter(p => p.creator === address)
           setUserProposals(userProposals)
         }
         
-        // Use local data for counts
         setTotalProposalsCount(allProposals.length)
         
-        // Only get blockchain stats if needed for display
         const stats = await getBlockchainStats()
         setBlockchainStats(stats)
       } catch (error) {
@@ -223,36 +206,7 @@ export function DashboardPage() {
       }
     }
 
-    if (isConnected) {
-      fetchProposalData()
-      
-      // Set up aggressive periodic cleanup for 200KB storage limit
-      const cleanupInterval = setInterval(async () => {
-        try {
-          // First check storage limits
-          const storageResult = await enforceStorageLimits()
-          if (storageResult.cleaned) {
-            console.log('📱 Periodic storage cleanup completed')
-            setStorageUsage({
-              size: storageResult.newSize || 0,
-              limit: 200
-            })
-          }
-          
-          // Then clean expired proposals (more frequent, shorter retention)
-          const expiredResult = await cleanupExpiredProposals(2) // Keep expired for only 2 days
-          if (expiredResult.removedCount > 0) {
-            console.log(`🧹 Periodic cleanup: Removed ${expiredResult.removedCount} expired proposals`)
-            // Refresh proposal data after cleanup
-            fetchProposalData()
-          }
-        } catch (error) {
-          console.error('Periodic cleanup failed:', error)
-        }
-      }, 30 * 60 * 1000) // Run every 30 minutes instead of 1 hour
-
-      return () => clearInterval(cleanupInterval)
-    }
+    fetchProposalData()
   }, [isConnected, address])
 
   // Set initial time on client side only - no constant updates for performance
@@ -260,29 +214,7 @@ export function DashboardPage() {
     setCurrentTime(new Date())
   }, [])
 
-  // Monitor storage usage
-  useEffect(() => {
-    const checkStorageUsage = () => {
-      try {
-        const proposals = JSON.parse(localStorage.getItem('climate_dao_proposals') || '[]')
-        const votes = JSON.parse(localStorage.getItem('climate_dao_votes') || '[]')
-        const userHistory = JSON.parse(localStorage.getItem('climate_dao_user_history') || '[]')
-        const totalSize = JSON.stringify({proposals, votes, userHistory}).length
-        setStorageUsage({
-          size: Math.round(totalSize / 1024),
-          limit: 200
-        })
-      } catch (error) {
-        console.error('Failed to check storage usage:', error)
-      }
-    }
 
-    checkStorageUsage()
-    const interval = setInterval(checkStorageUsage, 60000) // Check every minute
-    return () => clearInterval(interval)
-  }, [])
-
-  // Handle deleting a proposal
   const handleDeleteProposal = async (proposalId: number) => {
     if (!confirm('Are you sure you want to delete this proposal? This action cannot be undone.')) {
       return

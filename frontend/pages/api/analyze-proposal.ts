@@ -56,20 +56,40 @@ const REAL_WORLD_PROJECTS: Record<string, Array<{ name: string; description: str
   ],
 };
 
-function detectCategory(title: string, description: string): string[] {
+// Maps form category values directly to project database keys
+const FORM_CATEGORY_MAP: Record<string, string[]> = {
+  'renewable-energy': ['solar', 'wind', 'energy'],
+  'reforestation':    ['forest'],
+  'water-conservation': ['water'],
+  'waste-management': ['waste'],
+  'sustainable-agriculture': ['agriculture'],
+  'carbon-capture':   ['carbon'],
+  'climate-education': ['energy'],
+  'transportation':   ['transport'],
+  'ocean':            ['ocean'],
+  'urban':            ['urban'],
+};
+
+function detectCategory(title: string, description: string, formCategory?: string): string[] {
+  // 1. Form category is the most reliable signal — use it first
+  if (formCategory && FORM_CATEGORY_MAP[formCategory]) {
+    return FORM_CATEGORY_MAP[formCategory];
+  }
+
+  // 2. Keyword fallback when no form category provided
   const text = (title + ' ' + description).toLowerCase();
   const categories: string[] = [];
   if (text.match(/solar|photovoltaic|pv panel|sun energy/)) categories.push('solar');
   if (text.match(/wind turbine|wind farm|wind energy|wind power/)) categories.push('wind');
   if (text.match(/forest|tree|reforest|deforest|woodland|jungle/)) categories.push('forest');
-  if (text.match(/ocean|sea|marine|plastic|coral|reef|coastal/)) categories.push('ocean');
+  if (text.match(/ocean|sea|marine|coral|reef|coastal/)) categories.push('ocean');
   if (text.match(/carbon capture|co2|direct air|sequestration|carbon removal/)) categories.push('carbon');
   if (text.match(/farm|agriculture|crop|soil|food|livestock/)) categories.push('agriculture');
-  if (text.match(/transport|vehicle|car|bus|bike|scooter|electric vehicle|ev|mobility/)) categories.push('transport');
-  if (text.match(/waste|recycle|plastic|landfill|compost|circular/)) categories.push('waste');
-  if (text.match(/energy|power|electricity|grid|battery|storage/)) categories.push('energy');
+  if (text.match(/\btransport\b|\bvehicle\b|\bscooter\b|electric vehicle|\bmobility\b/)) categories.push('transport');
+  if (text.match(/waste|recycle|landfill|compost|circular economy/)) categories.push('waste');
   if (text.match(/water|river|lake|irrigation|drought|flood/)) categories.push('water');
-  if (text.match(/urban|city|building|cooling|heat island|green roof|smart city/)) categories.push('urban');
+  if (text.match(/heat island|urban heat|cooling|green roof|smart city/)) categories.push('urban');
+  if (text.match(/energy|power|electricity|grid|battery|storage/) && !categories.includes('solar') && !categories.includes('wind')) categories.push('energy');
   return categories.length > 0 ? categories : ['energy'];
 }
 
@@ -148,24 +168,122 @@ function generateConcerns(title: string, description: string, funding: string): 
   return concerns.slice(0, 3);
 }
 
-function generateInnovativeAddons(categories: string[]): string[] {
+function generateInnovativeAddons(categories: string[], title: string, description: string): string[] {
+  const text = (title + ' ' + description).toLowerCase();
+
   const addons: Record<string, string[]> = {
-    solar: ["Add IoT-based real-time energy monitoring dashboard", "Integrate peer-to-peer energy trading using blockchain", "Include battery storage for 24/7 clean energy access"],
-    wind: ["Deploy AI-powered predictive maintenance for turbines", "Add community energy sharing platform", "Integrate weather forecasting for optimal energy generation"],
-    forest: ["Use drone technology for large-scale seed dispersal", "Implement satellite monitoring for deforestation alerts", "Add carbon credit tokenization for community income"],
-    ocean: ["Deploy autonomous underwater drones for monitoring", "Use AI to track plastic accumulation patterns", "Create community-based plastic collection incentive system"],
-    carbon: ["Integrate blockchain for transparent carbon credit tracking", "Use AI to optimize capture efficiency", "Partner with airlines for carbon offset marketplace"],
-    agriculture: ["Add soil carbon sensors for real-time monitoring", "Implement precision agriculture using satellite data", "Create farmer cooperative for carbon credit trading"],
-    transport: ["Add gamification to encourage sustainable transport choices", "Integrate with city smart traffic systems", "Deploy AI route optimization to minimize emissions"],
-    waste: ["Use AI sorting robots to improve recycling rates", "Create blockchain-based waste tracking system", "Develop community reward tokens for recycling participation"],
-    energy: ["Add smart grid integration for demand response", "Implement AI energy consumption optimization", "Create community energy cooperative model"],
-    water: ["Deploy IoT sensors for real-time water quality monitoring", "Use AI to predict and prevent water waste", "Integrate rainwater harvesting with smart collection systems"],
-    urban: ["Add green roof network with biodiversity monitoring", "Implement smart cooling systems with AI optimization", "Create urban heat island mapping using satellite data"],
+    solar: [
+      "Add IoT-based real-time energy monitoring dashboard",
+      "Integrate peer-to-peer energy trading using blockchain",
+      "Include battery storage for 24/7 clean energy access",
+      "Deploy mobile app for community energy usage tracking",
+      "Add predictive maintenance alerts using AI sensor data",
+    ],
+    wind: [
+      "Deploy AI-powered predictive maintenance for turbines",
+      "Add community energy sharing platform",
+      "Integrate weather forecasting for optimal energy generation",
+      "Use digital twin simulation to optimize turbine placement",
+      "Create local energy cooperative with token-based governance",
+    ],
+    forest: [
+      "Use drone technology for large-scale seed dispersal",
+      "Implement satellite monitoring for deforestation alerts",
+      "Add carbon credit tokenization for community income",
+      "Deploy soil moisture sensors to improve seedling survival rates",
+      "Create a public biodiversity dashboard with species tracking",
+    ],
+    ocean: [
+      "Deploy autonomous underwater drones for monitoring",
+      "Use AI to track plastic accumulation patterns",
+      "Create community-based plastic collection incentive system",
+      "Integrate real-time ocean health dashboard for public transparency",
+      "Partner with fishing communities for data collection incentives",
+    ],
+    carbon: [
+      "Integrate blockchain for transparent carbon credit tracking",
+      "Use AI to optimize capture efficiency",
+      "Partner with airlines for carbon offset marketplace",
+      "Add real-time CO2 measurement sensors with public dashboard",
+      "Develop community carbon credit wallet for local stakeholders",
+      "Use geospatial data to identify highest-impact capture sites",
+    ],
+    agriculture: [
+      "Add soil carbon sensors for real-time monitoring",
+      "Implement precision agriculture using satellite data",
+      "Create farmer cooperative for carbon credit trading",
+      "Deploy AI crop health monitoring using drone imagery",
+      "Integrate weather-based irrigation automation to reduce water use",
+    ],
+    transport: [
+      "Add gamification to encourage sustainable transport choices",
+      "Integrate with city smart traffic systems",
+      "Deploy AI route optimization to minimize emissions",
+      "Create a community carpooling app with carbon savings tracker",
+      "Add real-time emissions dashboard visible to commuters",
+    ],
+    waste: [
+      "Use AI sorting robots to improve recycling rates",
+      "Create blockchain-based waste tracking system",
+      "Develop community reward tokens for recycling participation",
+      "Deploy smart bins with fill-level sensors for optimized collection",
+      "Add QR-code product scanning to guide consumers on disposal",
+    ],
+    energy: [
+      "Add smart grid integration for demand response",
+      "Implement AI energy consumption optimization",
+      "Create community energy cooperative model",
+      "Deploy real-time energy audit tools for households",
+      "Integrate with local utility for dynamic pricing incentives",
+    ],
+    water: [
+      "Deploy IoT sensors for real-time water quality monitoring",
+      "Use AI to predict and prevent water waste",
+      "Integrate rainwater harvesting with smart collection systems",
+      "Add community water usage dashboard for behavioral nudging",
+      "Create mobile alerts for contamination events using sensor data",
+    ],
+    urban: [
+      "Add green roof network with biodiversity monitoring",
+      "Implement smart cooling systems with AI optimization",
+      "Create urban heat island mapping using satellite data",
+      "Deploy air quality sensors with public real-time dashboard",
+      "Integrate with city planning tools for data-driven green zoning",
+    ],
   };
+
+  // Skip addons that describe something the proposal already mentions
+  const skipKeywords: Record<string, string[]> = {
+    blockchain: ['blockchain', 'token', 'crypto', 'web3', 'dao'],
+    ai: ['ai ', 'artificial intelligence', 'machine learning', 'ml model'],
+    iot: ['iot', 'sensor', 'smart device'],
+    satellite: ['satellite', 'remote sensing'],
+    drone: ['drone', 'uav'],
+    dashboard: ['dashboard', 'monitoring platform'],
+    cooperative: ['cooperative', 'co-op', 'community owned'],
+  };
+
+  const isAlreadyMentioned = (addon: string): boolean => {
+    const addonLower = addon.toLowerCase();
+    for (const [key, keywords] of Object.entries(skipKeywords)) {
+      const addonHasKey = keywords.some(k => addonLower.includes(k));
+      const proposalHasKey = keywords.some(k => text.includes(k));
+      if (addonHasKey && proposalHasKey) return true;
+    }
+    return false;
+  };
+
+  // Use a hash of the title to pick a different starting offset per proposal
+  const titleHash = title.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
 
   const result: string[] = [];
   categories.forEach(cat => {
-    if (addons[cat]) result.push(...addons[cat].slice(0, 2));
+    if (!addons[cat]) return;
+    const pool = addons[cat].filter(a => !isAlreadyMentioned(a));
+    // Rotate starting index based on title hash so same-category proposals get different addons
+    const offset = titleHash % pool.length;
+    const rotated = [...pool.slice(offset), ...pool.slice(0, offset)];
+    result.push(...rotated.slice(0, 2));
   });
   return result.slice(0, 4);
 }
@@ -195,12 +313,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { title, description, category, fundingAmount, expectedImpact, location } = req.body;
 
-    const categories = detectCategory(title, description);
+    const categories = detectCategory(title, description, category);
     const existingProjects = getExistingProjects(categories);
     const { overall, envScore, feasScore, innovScore } = generateScores(title, description, category, fundingAmount);
     const strengths = generateStrengths(title, description);
     const concerns = generateConcerns(title, description, fundingAmount);
-    const innovativeAddons = generateInnovativeAddons(categories);
+    const innovativeAddons = generateInnovativeAddons(categories, title, description);
     const realWorldComparison = generateRealWorldComparison(title, description, categories, existingProjects);
     const recommendedChanges = generateRecommendedChanges(title, description, categories);
 
