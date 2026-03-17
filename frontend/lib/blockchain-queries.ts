@@ -3,7 +3,7 @@
 import algosdk from 'algosdk';
 import { algodClient, CONTRACT_IDS } from '@/lib/algorand';
 import { memberTracker } from '@/lib/member-tracker';
-import { supabase } from '@/lib/supabase-member-tracker';
+
 
 export interface BlockchainProposal {
   id: number;
@@ -259,23 +259,16 @@ export class ClimateDAOQueryService {
         creationTime: Date.now(),
       };
 
-      // Save to Supabase (shared across all users)
-      if (supabase) {
-        const { error } = await supabase.from('proposals').insert({
-          id: proposalData.id,
-          title: proposalData.title,
-          description: proposalData.description,
-          creator: proposalData.creator,
-          funding_amount: proposalData.fundingAmount,
-          vote_yes: 0,
-          vote_no: 0,
-          status: 'active',
-          end_time: proposalData.endTime,
-          category: proposalData.category,
-          ai_score: proposalData.aiScore,
-          creation_time: proposalData.creationTime,
+      // Save to Neon DB via API (shared across all users)
+      try {
+        const res = await fetch('/api/proposals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(proposalData),
         });
-        if (error) console.error('Supabase insert error:', error);
+        if (!res.ok) console.error('Neon proposals insert error:', await res.text());
+      } catch (err) {
+        console.error('Neon proposals insert failed:', err);
       }
 
       // Also cache locally
@@ -317,22 +310,20 @@ export class ClimateDAOQueryService {
 
   async storeVote(proposalId: number, vote: 'for' | 'against', userAddress: string, txId: string): Promise<boolean> {
     try {
-      // Save vote to Supabase
-      if (supabase) {
-        const { error: voteError } = await supabase.from('votes').insert({
-          proposal_id: proposalId,
-          voter_address: userAddress,
-          vote,
-          tx_id: txId,
+      // Save vote to Neon DB via API
+      try {
+        await fetch('/api/votes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ proposalId, voterAddress: userAddress, vote, txId }),
         });
-        if (voteError) console.error('Supabase vote insert error:', voteError);
-
-        // Increment vote count on proposal in Supabase
-        const col = vote === 'for' ? 'vote_yes' : 'vote_no';
-        const { data: current } = await supabase.from('proposals').select(col).eq('id', proposalId).single();
-        if (current) {
-          await supabase.from('proposals').update({ [col]: (current[col] || 0) + 1 }).eq('id', proposalId);
-        }
+        await fetch('/api/proposals', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: proposalId, vote }),
+        });
+      } catch (err) {
+        console.error('Neon vote insert failed:', err);
       }
 
       // Update local cache
@@ -412,16 +403,19 @@ export class ClimateDAOQueryService {
 
   async getProposal(proposalId: number): Promise<BlockchainProposal | null> {
     try {
-      if (supabase) {
-        const { data, error } = await supabase.from('proposals').select('*').eq('id', proposalId).single();
-        if (error || !data) return this.getStoredProposals().find(p => p.id === proposalId) || null;
-        return this.mapSupabaseRow(data);
+      const response = await fetch(`/api/proposals/${proposalId}`);
+      if (response.ok) {
+        const proposal = await response.json();
+        if (proposal && proposal.id) {
+          return proposal as BlockchainProposal;
+        }
       }
-      return this.getStoredProposals().find(p => p.id === proposalId) || null;
     } catch (error) {
-      console.error(`Error getting proposal ${proposalId}:`, error);
-      return null;
+      console.error(`Error fetching proposal from API ${proposalId}:`, error);
     }
+
+    // fallback to localStorage
+    return this.getStoredProposals().find(p => p.id === proposalId) || null;
   }
 
   async getProposals(filter?: {
@@ -432,37 +426,31 @@ export class ClimateDAOQueryService {
     offset?: number;
   }): Promise<BlockchainProposal[]> {
     try {
-      let proposals: BlockchainProposal[] = [];
+      const response = await fetch('/api/proposals');
+      if (response.ok) {
+        let proposals = (await response.json()) as BlockchainProposal[];
 
-      if (supabase) {
-        // Fetch from Supabase — shared across ALL users
-        let query = supabase.from('proposals').select('*').order('creation_time', { ascending: false });
-        if (filter?.status) query = query.eq('status', filter.status);
-        if (filter?.creator) query = query.eq('creator', filter.creator);
-        if (filter?.category) query = query.eq('category', filter.category);
-        if (filter?.limit) query = query.limit(filter.limit);
-
-        const { data, error } = await query;
-        if (error) throw error;
-        proposals = (data || []).map(this.mapSupabaseRow);
-
-        // Update local cache with latest from Supabase
-        localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals));
-      } else {
-        // Fallback to localStorage
-        proposals = this.getStoredProposals();
         if (filter?.status) proposals = proposals.filter(p => p.status === filter.status);
         if (filter?.creator) proposals = proposals.filter(p => p.creator === filter.creator);
         if (filter?.category) proposals = proposals.filter(p => p.category === filter.category);
         if (filter?.offset) proposals = proposals.slice(filter.offset);
         if (filter?.limit) proposals = proposals.slice(0, filter.limit);
-      }
 
-      return proposals;
+        localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals));
+        return proposals;
+      }
     } catch (error) {
-      console.error('Error fetching proposals:', error);
-      return this.getStoredProposals();
+      console.error('Error fetching proposals from API:', error);
     }
+
+    // fallback to localStorage
+    let proposals = this.getStoredProposals();
+    if (filter?.status) proposals = proposals.filter(p => p.status === filter.status);
+    if (filter?.creator) proposals = proposals.filter(p => p.creator === filter.creator);
+    if (filter?.category) proposals = proposals.filter(p => p.category === filter.category);
+    if (filter?.offset) proposals = proposals.slice(filter.offset);
+    if (filter?.limit) proposals = proposals.slice(0, filter.limit);
+    return proposals;
   }
 
   /**
@@ -930,37 +918,16 @@ export class ClimateDAOQueryService {
   async getUserVotingHistory(userAddress: string): Promise<VotingRecord[]> {
     try {
       if (!userAddress) return [];
-
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('votes')
-          .select('proposal_id, vote, voted_at, tx_id, proposals(title)')
-          .eq('voter_address', userAddress)
-          .order('voted_at', { ascending: false });
-
-        if (!error && data) {
-          const records: VotingRecord[] = data.map((v: any) => ({
-            proposalId: v.proposal_id,
-            proposalTitle: v.proposals?.title || `Proposal #${v.proposal_id}`,
-            vote: v.vote as 'for' | 'against',
-            timestamp: new Date(v.voted_at).getTime() / 1000,
-            txId: v.tx_id || '',
-            confirmedRound: 1,
-          }));
-          // Also update local cache
-          localStorage.setItem(`user_votes_${userAddress}`, JSON.stringify(records));
-          return records;
-        }
+      const res = await fetch(`/api/votes?voter=${encodeURIComponent(userAddress)}`);
+      if (res.ok) {
+        const records: VotingRecord[] = await res.json();
+        localStorage.setItem(`user_votes_${userAddress}`, JSON.stringify(records));
+        return records;
       }
-
-      // Fallback to localStorage
-      const stored = localStorage.getItem(`user_votes_${userAddress}`);
-      if (!stored) return [];
-      return (JSON.parse(stored) as VotingRecord[]).sort((a, b) => b.timestamp - a.timestamp);
-    } catch (error) {
-      console.error('Error fetching voting history:', error);
-      return [];
-    }
+    } catch {}
+    const stored = localStorage.getItem(`user_votes_${userAddress}`);
+    if (!stored) return [];
+    return (JSON.parse(stored) as VotingRecord[]).sort((a, b) => b.timestamp - a.timestamp);
   }
 
   /**
