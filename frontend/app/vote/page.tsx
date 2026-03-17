@@ -12,6 +12,7 @@ import {
 import { useWalletContext } from '@/hooks/use-wallet';
 import { useClimateDAO } from '@/hooks/use-climate-dao';
 import { climateDAOQuery } from '@/lib/blockchain-queries';
+import { supabase } from '@/lib/supabase-member-tracker';
 import Link from 'next/link';
 import { WalletGuard } from '@/components/wallet-guard';
 
@@ -81,7 +82,13 @@ export default function VotePage() {
         return newStatus !== p.status ? { ...p, status: newStatus } : p;
       });
 
-      // Persist any status changes back to localStorage
+      // Persist status changes to Supabase and localStorage
+      const statusChanged = updated.filter((u, i) => u.status !== all[i]?.status);
+      if (supabase && statusChanged.length > 0) {
+        await Promise.all(statusChanged.map(p =>
+          supabase.from('proposals').update({ status: p.status }).eq('id', p.id)
+        ));
+      }
       const stored = JSON.parse(localStorage.getItem('climate_dao_proposals') || '[]');
       const merged = stored.map((s: any) => {
         const found = updated.find((u: any) => u.id === s.id);
@@ -110,6 +117,26 @@ export default function VotePage() {
   useEffect(() => {
     loadProposals();
     loadUserVotes();
+
+    const handleCommunityProposalUpdate = () => {
+      loadProposals();
+      loadUserVotes();
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'climate_dao_proposals') {
+        loadProposals();
+        loadUserVotes();
+      }
+    }
+
+    window.addEventListener('climate_dao_proposals_updated', handleCommunityProposalUpdate)
+    window.addEventListener('storage', handleStorage)
+
+    return () => {
+      window.removeEventListener('climate_dao_proposals_updated', handleCommunityProposalUpdate)
+      window.removeEventListener('storage', handleStorage)
+    }
   }, [isConnected, address]);
 
   const handleVote = async (proposal: Proposal, vote: 'for' | 'against') => {
