@@ -12,7 +12,6 @@ import {
 import { useWalletContext } from '@/hooks/use-wallet';
 import { useClimateDAO } from '@/hooks/use-climate-dao';
 import { climateDAOQuery } from '@/lib/blockchain-queries';
-import { supabase } from '@/lib/supabase-member-tracker';
 import Link from 'next/link';
 import { WalletGuard } from '@/components/wallet-guard';
 
@@ -82,13 +81,15 @@ export default function VotePage() {
         return newStatus !== p.status ? { ...p, status: newStatus } : p;
       });
 
-      // Persist status changes to Supabase and localStorage
-      const statusChanged = updated.filter((u, i) => u.status !== all[i]?.status);
-      if (supabase && statusChanged.length > 0) {
-        await Promise.all(statusChanged.map(p =>
-          supabase.from('proposals').update({ status: p.status }).eq('id', p.id)
-        ));
-      }
+      // Persist status changes to DB and localStorage
+      const statusChanged = updated.filter((u: any, i: number) => u.status !== (all as any)[i]?.status);
+      await Promise.all(statusChanged.map((p: any) =>
+        fetch('/api/proposals', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: p.id, status: p.status }),
+        })
+      ));
       const stored = JSON.parse(localStorage.getItem('climate_dao_proposals') || '[]');
       const merged = stored.map((s: any) => {
         const found = updated.find((u: any) => u.id === s.id);
