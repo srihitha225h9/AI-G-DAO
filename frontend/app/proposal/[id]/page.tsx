@@ -2,192 +2,229 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useClimateDAO } from "@/hooks/use-climate-dao"
 import { useAIReview } from "@/hooks/use-ai-review"
 import { AIReviewDisplay } from "@/components/ai-review-display"
 import Link from "next/link"
 import { WalletGuard } from "@/components/wallet-guard"
-import { ArrowLeftIcon, SparklesIcon } from "lucide-react"
-import { useWalletContext } from "@/hooks/use-wallet"
+import {
+  ArrowLeftIcon, SparklesIcon, CoinsIcon, ClockIcon,
+  CheckCircleIcon, XCircleIcon, UsersIcon, UserIcon
+} from "lucide-react"
+
+const CATEGORY_COLORS: Record<string, string> = {
+  'renewable-energy':       'bg-yellow-500/20 text-yellow-400 border-yellow-500/50',
+  'carbon-capture':         'bg-green-500/20 text-green-400 border-green-500/50',
+  'reforestation':          'bg-emerald-500/20 text-emerald-400 border-emerald-500/50',
+  'ocean-cleanup':          'bg-blue-500/20 text-blue-400 border-blue-500/50',
+  'waste-management':       'bg-orange-500/20 text-orange-400 border-orange-500/50',
+  'sustainable-agriculture':'bg-lime-500/20 text-lime-400 border-lime-500/50',
+  'water-conservation':     'bg-cyan-500/20 text-cyan-400 border-cyan-500/50',
+  'transportation':         'bg-purple-500/20 text-purple-400 border-purple-500/50',
+}
 
 export default function ProposalDetailPage() {
   const params = useParams()
-  const idParam = params?.id
-  const proposalId = idParam ? Number(idParam) : null
+  const proposalId = params?.id ? Number(params.id) : null
   const { getProposal } = useClimateDAO()
-  const [proposal, setProposal] = useState<any | null>(null)
   const { isAnalyzing, reviewResult, analyzeProposalData } = useAIReview()
-  const [aiReview, setAiReview] = useState<any | null>(null)
+  const [proposal, setProposal] = useState<any>(null)
+  const [aiReview, setAiReview] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
-  // When hook's reviewResult updates, reflect it in local component state
   useEffect(() => {
     if (reviewResult) setAiReview(reviewResult)
   }, [reviewResult])
 
   useEffect(() => {
+    if (!proposalId) return
     const load = async () => {
       setLoading(true)
       try {
-        if (!proposalId) return
         const p = await getProposal(proposalId)
         setProposal(p)
-
-        // Load AI review — first try DB (shared), fallback to localStorage
-        try {
-          if (p && (p as any).aiReview) {
-            setAiReview((p as any).aiReview)
-          } else {
+        if (p?.aiReview) {
+          setAiReview(p.aiReview)
+        } else {
+          try {
             const stored = localStorage.getItem(`proposal_ai_${proposalId}`)
             if (stored) setAiReview(JSON.parse(stored))
-          }
-        } catch (err) {
-          console.warn('Failed to load AI review:', err)
+          } catch {}
         }
-      } catch (err) {
-        console.error('Failed to load proposal:', err)
       } finally {
         setLoading(false)
       }
     }
     load()
-  }, [proposalId, getProposal])
+  }, [proposalId])
 
-  if (!proposalId) {
-    return (
-      <div className="p-6">
-        <Card>
-          <CardContent>
-            <p>Invalid proposal id</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+  if (!proposalId) return null
+
+  const totalVotes = proposal ? proposal.voteYes + proposal.voteNo : 0
+  const yesPercent = totalVotes > 0 ? (proposal.voteYes / totalVotes) * 100 : 0
+  const timeLeft = proposal ? Math.ceil((proposal.endTime - Date.now()) / (24 * 60 * 60 * 1000)) : 0
 
   return (
     <WalletGuard requireBalance={0}>
       <div className="relative flex flex-col min-h-[100dvh] text-white overflow-hidden">
-        {/* Background */}
         <div className="fixed inset-0 z-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900"></div>
-          <div className="absolute inset-0 bg-black/20"></div>
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900" />
         </div>
 
         {/* Header */}
-        <header className="relative z-10 flex items-center justify-between p-6 border-b border-white/20">
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard" className="flex items-center gap-2 text-white hover:text-white/80">
-              <ArrowLeftIcon className="w-5 h-5" />
-              <span className="text-sm font-medium">Back to Dashboard</span>
-            </Link>
-          </div>
-
-          <div className="text-white font-bold text-lg">Proposal Details</div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <SparklesIcon className="w-5 h-5 text-yellow-400" />
-              <div className="text-sm text-white/90">AI Analysis</div>
-            </div>
+        <header className="relative z-10 flex items-center justify-between px-4 sm:px-6 py-4 border-b border-white/10">
+          <Link href="/vote" className="flex items-center gap-2 text-white/70 hover:text-white transition-colors">
+            <ArrowLeftIcon className="w-4 h-4" />
+            <span className="text-sm">Back to Votes</span>
+          </Link>
+          <span className="font-bold text-base">Proposal Details</span>
+          <div className="flex items-center gap-1 text-yellow-400 text-sm">
+            <SparklesIcon className="w-4 h-4" />
+            <span className="hidden sm:inline">AI Analysis</span>
           </div>
         </header>
 
-        <main className="relative z-10 flex-1 px-6 py-6">
-          <div className="max-w-3xl mx-auto space-y-6">
-            <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold text-white">Proposal #{proposalId}</h1>
-              <Link href="/dashboard">
-                <Button variant="ghost">Back</Button>
-              </Link>
-            </div>
+        <main className="relative z-10 flex-1 px-4 sm:px-6 py-6">
+          <div className="max-w-3xl mx-auto space-y-5">
 
             {loading ? (
-              <Card>
-                <CardContent>
-                  <p className="text-white/60">Loading proposal...</p>
-                </CardContent>
-              </Card>
+              <div className="text-center py-20">
+                <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-white/50 text-sm">Loading proposal...</p>
+              </div>
             ) : !proposal ? (
-              <Card>
-                <CardContent>
-                  <p className="text-white/60">Proposal not found</p>
-                </CardContent>
+              <Card className="bg-white/5 border-white/10 rounded-2xl">
+                <CardContent className="py-12 text-center text-white/50">Proposal not found.</CardContent>
               </Card>
             ) : (
               <>
-                {/* Project Card */}
-                <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl">
-                  <CardHeader>
-                    <CardTitle className="text-2xl text-white">{proposal.title}</CardTitle>
-                    <CardDescription className="text-white/60">{proposal.category} • Funding: ${proposal.fundingAmount.toLocaleString()}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-white/80 mb-4 whitespace-pre-wrap">{proposal.description}</p>
-                    <div className="flex items-center justify-between">
-                      <div className="text-white/60 text-sm">Submitted by: {proposal.creator}</div>
-                      {proposal.txId && (
-                        <div className="text-xs text-white/60">TX: <a className="underline" target="_blank" rel="noreferrer" href={`https://testnet.algoscan.app/tx/${proposal.txId}`}>{proposal.txId}</a></div>
-                      )}
+                {/* Title + Badges */}
+                <div className="space-y-3">
+                  <h1 className="text-2xl font-bold text-white leading-snug">{proposal.title}</h1>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge className={CATEGORY_COLORS[proposal.category] || 'bg-gray-500/20 text-gray-400'}>
+                      {proposal.category.replace(/-/g, ' ')}
+                    </Badge>
+                    <Badge className={
+                      proposal.status === 'active'   ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                      proposal.status === 'passed'   ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                      proposal.status === 'rejected' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                      'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                    }>
+                      {proposal.status.toUpperCase()}
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Key stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { icon: CoinsIcon,       color: 'text-purple-400', val: `$${proposal.fundingAmount.toLocaleString()}`, label: 'Funding' },
+                    { icon: UsersIcon,       color: 'text-blue-400',   val: totalVotes,                                    label: 'Total Votes' },
+                    { icon: CheckCircleIcon, color: 'text-green-400',  val: `${yesPercent.toFixed(0)}%`,                  label: 'Yes Votes' },
+                    { icon: ClockIcon,       color: 'text-yellow-400', val: proposal.status === 'active' ? `${timeLeft}d` : '—', label: 'Time Left' },
+                  ].map(({ icon: Icon, color, val, label }) => (
+                    <Card key={label} className="bg-white/5 border-white/10 rounded-2xl">
+                      <CardContent className="p-3 text-center">
+                        <Icon className={`w-5 h-5 ${color} mx-auto mb-1`} />
+                        <div className="text-lg font-bold text-white">{val}</div>
+                        <div className="text-xs text-white/50">{label}</div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Vote bar */}
+                <Card className="bg-white/5 border-white/10 rounded-2xl">
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex justify-between text-sm text-white/60">
+                      <span>✓ Yes — {proposal.voteYes} votes ({yesPercent.toFixed(0)}%)</span>
+                      <span>✗ No — {proposal.voteNo} votes ({(100 - yesPercent).toFixed(0)}%)</span>
                     </div>
+                    <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          proposal.status === 'passed' ? 'bg-green-500' :
+                          proposal.status === 'rejected' ? 'bg-red-500' : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${yesPercent}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-white/40 text-center">
+                      {totalVotes} vote{totalVotes !== 1 ? 's' : ''} · needs 3 to decide
+                    </p>
                   </CardContent>
                 </Card>
 
-                {/* AI Banner */}
-                {aiReview && (
-                  <div className="p-4 bg-white/5 border border-white/10 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <SparklesIcon className="w-5 h-5 text-yellow-400" />
-                        <div>
-                          <div className="text-sm font-medium text-yellow-300">Analysis from submission</div>
-                          <div className="text-xs text-white/60">Detailed AI insights for this proposal</div>
-                        </div>
-                      </div>
-                      {proposal.txId && <div className="text-xs text-white/60">TX: {proposal.txId}</div>}
+                {/* Passed banner */}
+                {proposal.status === 'passed' && (
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-2xl px-4 py-3 flex items-center gap-3">
+                    <CoinsIcon className="w-5 h-5 text-green-400 shrink-0" />
+                    <div>
+                      <p className="text-green-400 font-semibold text-sm">Funding Released!</p>
+                      <p className="text-green-300/70 text-xs">${proposal.fundingAmount.toLocaleString()} approved for this project.</p>
                     </div>
                   </div>
                 )}
 
-                {/* AI Analysis Section */}
-                <div className="mt-6 space-y-4">
+                {/* Description */}
+                <Card className="bg-white/5 border-white/10 rounded-2xl">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-white text-base">Project Description</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap">{proposal.description}</p>
+                  </CardContent>
+                </Card>
+
+                {/* Submitter */}
+                <div className="flex items-center gap-2 text-white/40 text-xs px-1">
+                  <UserIcon className="w-3 h-3" />
+                  <span className="font-mono truncate">Submitted by: {proposal.creator}</span>
+                </div>
+
+                {/* AI Analysis */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <SparklesIcon className="w-5 h-5 text-yellow-400" />
+                    <h2 className="text-white font-semibold">AI Analysis</h2>
+                  </div>
+
                   {aiReview ? (
                     <AIReviewDisplay review={aiReview} />
                   ) : (
-                    <>
-                      <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl">
-                        <CardContent>
-                          <p className="text-white/60">No AI analysis is available for this proposal yet.</p>
-                        </CardContent>
-                      </Card>
-                      <div className="text-right">
+                    <Card className="bg-white/5 border-white/10 rounded-2xl">
+                      <CardContent className="py-8 text-center space-y-3">
+                        <SparklesIcon className="w-10 h-10 text-white/20 mx-auto" />
+                        <p className="text-white/50 text-sm">No AI analysis available for this proposal yet.</p>
                         <Button
-                          onClick={async () => {
-                            if (!proposal) return
-                            try {
-                              await analyzeProposalData({
-                                title: proposal.title,
-                                description: proposal.description,
-                                category: proposal.category || 'general',
-                                fundingAmount: String(proposal.fundingAmount || 0),
-                                expectedImpact: proposal.expectedImpact || 'To be determined',
-                                location: proposal.location || 'Global'
-                              }, proposalId || undefined)
-                            } catch (err) {
-                              console.error('Failed to analyze proposal:', err)
-                              alert('AI analysis failed')
-                            }
-                          }}
+                          onClick={() => analyzeProposalData({
+                            title: proposal.title,
+                            description: proposal.description,
+                            category: proposal.category || 'general',
+                            fundingAmount: String(proposal.fundingAmount || 0),
+                            expectedImpact: proposal.expectedImpact || 'To be determined',
+                            location: proposal.location || 'Global',
+                          }, proposalId)}
+                          disabled={isAnalyzing}
                           className="bg-gradient-to-r from-purple-500 to-pink-500 text-white"
                         >
-                          {isAnalyzing ? 'Analyzing...' : 'Run AI Analysis'}
+                          {isAnalyzing ? 'Analyzing...' : '🤖 Run AI Analysis'}
                         </Button>
-                      </div>
-                    </>
+                      </CardContent>
+                    </Card>
                   )}
                 </div>
+
+                {/* Back to vote */}
+                <Link href="/vote">
+                  <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl mt-2">
+                    ← Back to Community Votes
+                  </Button>
+                </Link>
               </>
             )}
           </div>
