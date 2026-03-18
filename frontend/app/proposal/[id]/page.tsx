@@ -35,15 +35,16 @@ export default function ProposalDetailPage() {
         const p = await getProposal(proposalId)
         setProposal(p)
 
-        // Load persisted AI review from localStorage if present
+        // Load AI review — first try DB (shared), fallback to localStorage
         try {
-          const stored = localStorage.getItem(`proposal_ai_${proposalId}`)
-          if (stored) {
-            const parsed = JSON.parse(stored)
-            setAiReview(parsed)
+          if (p && (p as any).aiReview) {
+            setAiReview((p as any).aiReview)
+          } else {
+            const stored = localStorage.getItem(`proposal_ai_${proposalId}`)
+            if (stored) setAiReview(JSON.parse(stored))
           }
         } catch (err) {
-          console.warn('Failed to load AI review for proposal:', err)
+          console.warn('Failed to load AI review:', err)
         }
       } catch (err) {
         console.error('Failed to load proposal:', err)

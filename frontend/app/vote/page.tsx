@@ -426,6 +426,13 @@ export default function VotePage() {
                         <div className="text-xs text-white/25 pt-1 font-mono truncate">
                           Submitted by: {proposal.creator}
                         </div>
+
+                        {/* View full details + AI analysis */}
+                        <Link href={`/proposal/${proposal.id}`}>
+                          <Button className="w-full mt-1 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 rounded-xl h-9 text-sm">
+                            🔍 View Full Details & AI Analysis
+                          </Button>
+                        </Link>
                       </CardContent>
                     </Card>
                   );

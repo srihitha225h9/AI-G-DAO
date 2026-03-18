@@ -16,6 +16,7 @@ async function ensureTables() {
       end_time bigint NOT NULL,
       category text NOT NULL,
       ai_score numeric DEFAULT 0,
+      ai_review jsonb DEFAULT NULL,
       creation_time bigint NOT NULL,
       created_at timestamptz DEFAULT now()
     );
@@ -28,6 +29,7 @@ async function ensureTables() {
       voted_at timestamptz DEFAULT now(),
       UNIQUE(proposal_id, voter_address)
     );
+    ALTER TABLE proposals ADD COLUMN IF NOT EXISTS ai_review jsonb DEFAULT NULL;
   `);
 }
 
@@ -73,12 +75,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH /api/proposals — update status or vote counts
+// PATCH /api/proposals — update status, vote counts, or ai_review
 export async function PATCH(req: NextRequest) {
   try {
     await ensureTables();
     const body = await req.json();
-    const { id, status, vote } = body;
+    const { id, status, vote, ai_review } = body;
 
     if (status) {
       await pool.query('UPDATE proposals SET status = $1 WHERE id = $2', [status, id]);
@@ -87,6 +89,9 @@ export async function PATCH(req: NextRequest) {
       await pool.query('UPDATE proposals SET vote_yes = vote_yes + 1 WHERE id = $1', [id]);
     } else if (vote === 'against') {
       await pool.query('UPDATE proposals SET vote_no = vote_no + 1 WHERE id = $1', [id]);
+    }
+    if (ai_review !== undefined) {
+      await pool.query('UPDATE proposals SET ai_review = $1 WHERE id = $2', [JSON.stringify(ai_review), id]);
     }
     return NextResponse.json({ success: true });
   } catch (err: any) {
@@ -107,6 +112,7 @@ function mapRow(row: any) {
     endTime: Number(row.end_time),
     category: row.category,
     aiScore: Number(row.ai_score),
+    aiReview: row.ai_review || null,
     creationTime: Number(row.creation_time),
   };
 }

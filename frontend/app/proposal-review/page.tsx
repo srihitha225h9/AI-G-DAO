@@ -40,18 +40,22 @@ export default function ProposalReviewPage() {
     try {
       if (!reviewResult) return
 
-      // If we have a known proposal ID, persist the latest analysis against it
       if (draftProposalId) {
         localStorage.setItem(`proposal_ai_${draftProposalId}`, JSON.stringify(reviewResult))
 
-        // Also update the stored proposal's description and aiScore with the latest re-analysed data
+        // Save to DB so all community members can see it
+        fetch('/api/proposals', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: draftProposalId, ai_review: reviewResult }),
+        }).catch(err => console.warn('Failed to save AI review to DB:', err))
+
         const stored = localStorage.getItem('climate_dao_proposals')
         if (stored) {
           const proposals = JSON.parse(stored)
           const idx = proposals.findIndex((p: any) => p.id === draftProposalId)
           if (idx >= 0) {
             proposals[idx].aiScore = Math.round(reviewResult.score / 10)
-            // Persist the latest description used for analysis
             if (formData.description) proposals[idx].description = formData.description
             if (formData.expectedImpact) proposals[idx].expectedImpact = formData.expectedImpact
             localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals))
