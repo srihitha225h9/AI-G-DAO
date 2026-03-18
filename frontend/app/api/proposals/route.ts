@@ -99,7 +99,27 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-function mapRow(row: any) {
+// DELETE /api/proposals — delete a proposal (only creator)
+export async function DELETE(req: NextRequest) {
+  try {
+    await ensureTables();
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+    const creator = searchParams.get('creator');
+    if (!id || !creator) return NextResponse.json({ error: 'Missing id or creator' }, { status: 400 });
+
+    // Verify creator owns the proposal
+    const { rows } = await pool.query('SELECT creator, vote_yes, vote_no FROM proposals WHERE id = $1', [id]);
+    if (rows.length === 0) return NextResponse.json({ error: 'Proposal not found' }, { status: 404 });
+    if (rows[0].creator !== creator) return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    if (rows[0].vote_yes > 0 || rows[0].vote_no > 0) return NextResponse.json({ error: 'Cannot delete proposal that has received votes' }, { status: 400 });
+
+    await pool.query('DELETE FROM proposals WHERE id = $1', [id]);
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
   return {
     id: Number(row.id),
     title: row.title,

@@ -1035,57 +1035,23 @@ export class ClimateDAOQueryService {
    */
   async deleteProposal(proposalId: number, userAddress: string): Promise<boolean> {
     try {
-      // Get stored proposals
-      const storedProposals = localStorage.getItem('climate_dao_proposals');
-      if (!storedProposals) return false;
-      
-      const proposals: BlockchainProposal[] = JSON.parse(storedProposals);
-      
-      // Find the proposal
-      const proposalIndex = proposals.findIndex(p => p.id === proposalId);
-      if (proposalIndex === -1) {
-        throw new Error('Proposal not found');
-      }
-      
-      const proposal = proposals[proposalIndex];
-      
-      // Check if user is the creator
-      if (proposal.creator !== userAddress) {
-        throw new Error('Only the proposal creator can delete this proposal');
-      }
-      
-      // Check if proposal has votes - prevent deletion if voted on
-      if (proposal.voteYes > 0 || proposal.voteNo > 0) {
-        throw new Error('Cannot delete proposal that has received votes');
-      }
-      
-      // Remove proposal from array
-      proposals.splice(proposalIndex, 1);
-      
-      // Update localStorage
-      localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals));
-      
-      // Also remove any associated votes (though there shouldn't be any)
-      const storedVotes = localStorage.getItem(`proposal_votes_${proposalId}`);
-      if (storedVotes) {
-        localStorage.removeItem(`proposal_votes_${proposalId}`);
-      }
-      
-      // Remove from user's voting history if they somehow voted on their own proposal
-      const userVotesKey = `user_votes_${userAddress}`;
-      const userVotes = localStorage.getItem(userVotesKey);
-      if (userVotes) {
-        const votingHistory: VotingRecord[] = JSON.parse(userVotes);
-        const filteredHistory = votingHistory.filter(vote => vote.proposalId !== proposalId);
-        localStorage.setItem(userVotesKey, JSON.stringify(filteredHistory));
+      // Delete from Neon DB (shared across all users)
+      const res = await fetch(`/api/proposals?id=${proposalId}&creator=${encodeURIComponent(userAddress)}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to delete proposal');
       }
 
-      // Notify others that proposals changed
+      // Also remove from local cache
+      const proposals = this.getStoredProposals().filter(p => p.id !== proposalId);
+      localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals));
+      localStorage.removeItem(`proposal_ai_${proposalId}`);
+
       this.dispatchProposalEvent('climate_dao_proposals_updated');
-      
-      console.log(`Proposal ${proposalId} deleted successfully`);
       return true;
-      
     } catch (error) {
       console.error('Error deleting proposal:', error);
       throw error;
