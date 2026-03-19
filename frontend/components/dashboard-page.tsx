@@ -39,7 +39,7 @@ import { ProposalSearchEngine, SearchResult } from "@/lib/proposal-search"
 import { favoritesManager } from "@/lib/proposal-favorites"
 import dynamic from "next/dynamic"
 import { memberTracker } from '@/lib/member-tracker'
-import { useSettings, LANGUAGES } from '@/hooks/use-settings'
+import { useSettings } from '@/hooks/use-settings'
 
 // Lazy load heavy components to improve initial page load
 const VotingHistory = dynamic(() => import("@/components/voting-history").then(mod => ({ default: mod.VotingHistory })), {
@@ -58,7 +58,7 @@ const NotificationsPanel = dynamic(() => import("@/components/notifications-pane
 export function DashboardPage() {
   const { isConnected, address, balance, disconnect } = useWalletContext()
   const router = useRouter()
-  const { theme, language, t, setTheme, setLanguage } = useSettings()
+  const { theme, t, setTheme } = useSettings()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const { getProposals, getTotalProposals, getBlockchainStats, voteOnProposal, deleteProposal } = useClimateDAO()
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
@@ -459,19 +459,18 @@ export function DashboardPage() {
                         <div className="px-4 py-3 border-b border-white/10">
                           <div className="flex items-center gap-2 mb-1">
                             <div className="w-2 h-2 bg-green-400 rounded-full" />
-                            <span className="text-white/80 text-xs font-medium">{t.connected}</span>
+                            <span className="text-white/80 text-xs font-medium">Connected</span>
                           </div>
                           <p className="text-white/40 text-xs font-mono truncate">{address?.slice(0,10)}...{address?.slice(-6)}</p>
                           <p className="text-white/60 text-xs mt-0.5">{balance.toFixed(3)} ALGO</p>
                         </div>
                       )}
 
-                      <div className="py-2 px-3 space-y-1">
-
+                      <div className="py-2 px-3">
                         {/* Theme toggle */}
                         <div className="flex items-center justify-between py-2">
                           <span className="text-white/70 text-sm flex items-center gap-2">
-                            {theme === 'dark' ? '🌙' : '☀️'} {t.theme}
+                            {theme === 'dark' ? '🌙' : '☀️'} Theme
                           </span>
                           <button
                             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -484,27 +483,6 @@ export function DashboardPage() {
                             }`} />
                           </button>
                         </div>
-
-                        {/* Language selector */}
-                        <div className="py-1">
-                          <p className="text-white/50 text-xs mb-1.5">🌐 {t.language}</p>
-                          <div className="grid grid-cols-2 gap-1">
-                            {LANGUAGES.map(l => (
-                              <button
-                                key={l.code}
-                                onClick={() => setLanguage(l.code)}
-                                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs transition-colors ${
-                                  language === l.code
-                                    ? 'bg-blue-500/30 text-blue-300 border border-blue-500/40'
-                                    : 'text-white/60 hover:bg-white/10 hover:text-white'
-                                }`}
-                              >
-                                <span>{l.flag}</span>
-                                <span className="truncate">{l.label}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
                       </div>
 
                       {/* Disconnect */}
@@ -514,7 +492,7 @@ export function DashboardPage() {
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
                         >
                           <LogOutIcon className="w-4 h-4" />
-                          {t.disconnect}
+                          Disconnect Wallet
                         </button>
                       </div>
                     </div>
@@ -550,7 +528,7 @@ export function DashboardPage() {
           <div className="mb-6 sm:mb-8">
             <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full text-xs sm:text-sm text-white/80 mb-4">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-             {t.tagline}
+             Take One step Towards a Greener Future
             </div>
           </div>
 
