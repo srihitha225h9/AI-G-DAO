@@ -70,6 +70,7 @@ export default function VotePage() {
   const [successId, setSuccessId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>('all');
+  const [fundingPopup, setFundingPopup] = useState<{ status: 'passed' | 'rejected'; amount: number; title: string } | null>(null);
 
   const loadProposals = useCallback(async () => {
     try {
@@ -158,7 +159,17 @@ export default function VotePage() {
       setUserVotes(prev => ({ ...prev, [proposal.id]: vote }));
 
       // Refresh proposals to get updated vote counts + status
+      const prevStatus = proposal.status;
       await loadProposals();
+
+      // Check if this vote caused a status change
+      setProposals(current => {
+        const updated = current.find(p => p.id === proposal.id);
+        if (updated && prevStatus === 'active' && (updated.status === 'passed' || updated.status === 'rejected')) {
+          setFundingPopup({ status: updated.status, amount: updated.fundingAmount, title: updated.title });
+        }
+        return current;
+      });
 
       setTimeout(() => setSuccessId(null), 4000);
     } catch (err: any) {
@@ -180,6 +191,50 @@ export default function VotePage() {
 
   return (
     <WalletGuard requireBalance={0.001}>
+      {/* Funding popup */}
+      {fundingPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setFundingPopup(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className={`relative z-10 rounded-2xl border p-8 max-w-sm w-full text-center shadow-2xl ${
+              fundingPopup.status === 'passed'
+                ? 'bg-gradient-to-br from-green-900/90 to-slate-900/90 border-green-500/40'
+                : 'bg-gradient-to-br from-red-900/90 to-slate-900/90 border-red-500/40'
+            }`}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-5xl mb-4">{fundingPopup.status === 'passed' ? '🎉' : '❌'}</div>
+            <h2 className={`text-2xl font-bold mb-2 ${
+              fundingPopup.status === 'passed' ? 'text-green-400' : 'text-red-400'
+            }`}>
+              {fundingPopup.status === 'passed' ? 'Funding Released!' : 'Funding Failed'}
+            </h2>
+            <p className="text-white/70 text-sm mb-1 font-medium">{fundingPopup.title}</p>
+            <p className={`text-lg font-semibold mb-5 ${
+              fundingPopup.status === 'passed' ? 'text-green-300' : 'text-red-300'
+            }`}>
+              {fundingPopup.status === 'passed'
+                ? `$${fundingPopup.amount.toLocaleString()} approved & released`
+                : `$${fundingPopup.amount.toLocaleString()} funding rejected`}
+            </p>
+            <p className="text-white/40 text-xs mb-5">
+              {fundingPopup.status === 'passed'
+                ? 'The community has approved this proposal. Funds are now released for the project.'
+                : 'The community has voted against this proposal. Funding will not be released.'}
+            </p>
+            <button
+              onClick={() => setFundingPopup(null)}
+              className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                fundingPopup.status === 'passed'
+                  ? 'bg-green-500 hover:bg-green-400 text-white'
+                  : 'bg-red-500 hover:bg-red-400 text-white'
+              }`}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
       <div className="relative flex flex-col min-h-[100dvh] text-white overflow-hidden">
         {/* Background */}
         <div className="fixed inset-0 z-0">
