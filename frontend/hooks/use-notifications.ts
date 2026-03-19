@@ -120,57 +120,50 @@ export function useNotifications() {
     return () => clearInterval(interval);
   }, [isConnected, getProposals, addNotification]);
 
-  // Check for proposal status changes (every 30 seconds)
+  // Check for proposal status changes and new proposals (every 30 seconds)
   useEffect(() => {
     if (!isConnected) return;
 
-    let lastProposalCount = 0;
-    
     const checkProposalUpdates = async () => {
       try {
         const proposals = await getProposals();
-        
-        // Check for new proposals
-        if (proposals.length > lastProposalCount && lastProposalCount > 0) {
-          const newProposals = proposals.slice(0, proposals.length - lastProposalCount);
-          newProposals.forEach(proposal => {
-            addNotification({
-              type: 'new_proposal',
-              title: 'New Proposal Submitted',
-              message: `"${proposal.title}" is now available for voting`,
-              proposalId: proposal.id,
-              priority: 'medium'
-            });
+
+        // Use localStorage to track seen proposals across sessions
+        const seenIds: number[] = JSON.parse(localStorage.getItem('seen_proposal_ids') || '[]');
+
+        // Find proposals not seen before and not submitted by current user
+        const newProposals = proposals.filter(
+          p => !seenIds.includes(p.id) && p.creator !== address
+        );
+
+        newProposals.forEach(proposal => {
+          addNotification({
+            type: 'new_proposal',
+            title: '🌱 New Community Proposal!',
+            message: `"${proposal.title}" has been submitted and is open for voting.`,
+            proposalId: proposal.id,
+            priority: 'medium'
           });
-        }
-        
-        lastProposalCount = proposals.length;
-        
+        });
+
+        // Mark all current proposals as seen
+        const allIds = proposals.map(p => p.id);
+        localStorage.setItem('seen_proposal_ids', JSON.stringify(allIds));
+
         // Check for status changes (passed/rejected)
         proposals.forEach(proposal => {
           if (proposal.status === 'passed' || proposal.status === 'rejected') {
-            // This would typically come from a webhook or blockchain event
-            // For now, we'll simulate based on vote counts
-            const totalVotes = proposal.voteYes + proposal.voteNo;
-            if (totalVotes > 0) {
-              const outcome = proposal.voteYes > proposal.voteNo ? 'passed' : 'rejected';
-              
-              // Only notify if we haven't already notified about this outcome
-              const existingNotification = notifications.find(n => 
-                n.proposalId === proposal.id && 
-                n.type === 'proposal_status' &&
-                n.message.includes(outcome)
-              );
-              
-              if (!existingNotification) {
-                addNotification({
-                  type: 'proposal_status',
-                  title: `Proposal ${outcome.charAt(0).toUpperCase() + outcome.slice(1)}`,
-                  message: `Proposal "${proposal.title}" has ${outcome}`,
-                  proposalId: proposal.id,
-                  priority: 'medium'
-                });
-              }
+            const outcome = proposal.status;
+            const notifKey = `notified_outcome_${proposal.id}_${outcome}`;
+            if (!localStorage.getItem(notifKey)) {
+              localStorage.setItem(notifKey, '1');
+              addNotification({
+                type: 'proposal_status',
+                title: outcome === 'passed' ? '✅ Proposal Passed!' : '❌ Proposal Rejected',
+                message: `"${proposal.title}" has ${outcome}${outcome === 'passed' ? ' — funding released!' : '.'}`,
+                proposalId: proposal.id,
+                priority: 'high'
+              });
             }
           }
         });
@@ -179,9 +172,11 @@ export function useNotifications() {
       }
     };
 
+    // Check immediately on connect, then every 30 seconds
+    checkProposalUpdates();
     const interval = setInterval(checkProposalUpdates, 30000);
     return () => clearInterval(interval);
-  }, [isConnected, getProposals, addNotification, notifications]);
+  }, [isConnected, address, getProposals, addNotification]);
 
   // Update unread count when notifications change
   useEffect(() => {

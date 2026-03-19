@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -19,6 +20,7 @@ import {
 
 export function NotificationsPanel() {
   const [isOpen, setIsOpen] = useState(false);
+  const router = useRouter();
   const { 
     notifications, 
     unreadCount, 
@@ -66,17 +68,11 @@ export function NotificationsPanel() {
   };
 
   const handleNotificationClick = (notification: Notification) => {
-    if (!notification.read) {
-      markAsRead(notification.id);
-    }
-    
-    // Navigate to relevant page if needed
+    if (!notification.read) markAsRead(notification.id);
+    setIsOpen(false);
     if (notification.proposalId) {
-      // Could navigate to proposal details
-      // TODO: Navigate to proposal details page
-    }
-    if (notification.txId) {
-      // Open transaction in Lora explorer
+      router.push(`/proposal/${notification.proposalId}`);
+    } else if (notification.txId) {
       window.open(`https://lora.algokit.io/testnet/transaction/${notification.txId}`, '_blank');
     }
   };
