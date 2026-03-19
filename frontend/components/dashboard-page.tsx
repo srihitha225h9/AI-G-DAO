@@ -21,8 +21,14 @@ import {
   SparklesIcon,
   SettingsIcon,
   LeafIcon,
-  Search
+  Search,
+  LogOutIcon,
+  UserIcon,
+  BellIcon,
+  ShieldIcon,
+  InfoIcon
 } from "lucide-react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletContext } from "@/hooks/use-wallet"
 import { useClimateDAO } from "@/hooks/use-climate-dao"
@@ -54,6 +60,8 @@ const NotificationsPanel = dynamic(() => import("@/components/notifications-pane
 
 export function DashboardPage() {
   const { isConnected, address, balance, disconnect } = useWalletContext()
+  const router = useRouter()
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const { getProposals, getTotalProposals, getBlockchainStats, voteOnProposal, deleteProposal } = useClimateDAO()
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -177,7 +185,7 @@ export function DashboardPage() {
     return unsubscribe
   }, [])
 
-  // Fetch proposals data
+  // Fetch proposals data and listen for community updates
   useEffect(() => {
     const fetchProposalData = async () => {
       try {
@@ -207,6 +215,24 @@ export function DashboardPage() {
     }
 
     fetchProposalData()
+
+    const handleCommunityProposalUpdate = () => {
+      fetchProposalData()
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'climate_dao_proposals') {
+        fetchProposalData()
+      }
+    }
+
+    window.addEventListener('climate_dao_proposals_updated', handleCommunityProposalUpdate)
+    window.addEventListener('storage', handleStorage)
+
+    return () => {
+      window.removeEventListener('climate_dao_proposals_updated', handleCommunityProposalUpdate)
+      window.removeEventListener('storage', handleStorage)
+    }
   }, [isConnected, address])
 
   // Set initial time on client side only - no constant updates for performance
@@ -416,9 +442,77 @@ export function DashboardPage() {
                 <WalletInfo />
               </div>
               <NotificationsPanel />
-              <Button variant="ghost" size="sm" className="text-white/80 hover:text-white hover:bg-white/10 rounded-xl p-2">
-                <SettingsIcon className="w-4 h-4" />
-              </Button>
+              <div className="relative">
+                <Button
+                  variant="ghost" size="sm"
+                  className="text-white/80 hover:text-white hover:bg-white/10 rounded-xl p-2"
+                  onClick={() => setSettingsOpen(o => !o)}
+                >
+                  <SettingsIcon className="w-4 h-4" />
+                </Button>
+
+                {settingsOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setSettingsOpen(false)} />
+                    <div className="absolute right-0 top-10 z-50 w-56 bg-slate-900/95 backdrop-blur-xl border border-white/15 rounded-2xl shadow-2xl overflow-hidden">
+                      {/* Wallet info header */}
+                      {isConnected && (
+                        <div className="px-4 py-3 border-b border-white/10">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="w-2 h-2 bg-green-400 rounded-full" />
+                            <span className="text-white/80 text-xs font-medium">Connected</span>
+                          </div>
+                          <p className="text-white/40 text-xs font-mono truncate">{address?.slice(0,10)}...{address?.slice(-6)}</p>
+                          <p className="text-white/60 text-xs mt-0.5">{balance.toFixed(3)} ALGO</p>
+                        </div>
+                      )}
+
+                      {/* Menu items */}
+                      <div className="py-1.5">
+                        <button
+                          onClick={() => { setSettingsOpen(false); router.push('/submit-proposal'); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                          <PlusIcon className="w-4 h-4 text-blue-400" />
+                          Submit Proposal
+                        </button>
+                        <button
+                          onClick={() => { setSettingsOpen(false); router.push('/impact-analytics'); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                          <BarChart3Icon className="w-4 h-4 text-green-400" />
+                          Impact Analytics
+                        </button>
+                        <button
+                          onClick={() => { setSettingsOpen(false); router.push('/proposal-review'); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                          <BrainCircuitIcon className="w-4 h-4 text-purple-400" />
+                          AI Review
+                        </button>
+                        <button
+                          onClick={() => { setSettingsOpen(false); router.push('/submission-guidelines'); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                          <InfoIcon className="w-4 h-4 text-yellow-400" />
+                          Submission Guidelines
+                        </button>
+                      </div>
+
+                      {/* Disconnect */}
+                      <div className="border-t border-white/10 py-1.5">
+                        <button
+                          onClick={() => { setSettingsOpen(false); disconnect(); router.push('/connect-wallet'); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                        >
+                          <LogOutIcon className="w-4 h-4" />
+                          Disconnect Wallet
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
               
               {/* Mobile wallet info */}
               <div className="sm:hidden">
