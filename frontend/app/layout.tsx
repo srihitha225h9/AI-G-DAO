@@ -3,6 +3,7 @@ import './globals.css'
 import { WalletProvider } from '@/hooks/use-wallet'
 import { LoadingProvider } from '@/hooks/use-loading'
 import { PageTransitionLoader } from '@/components/page-transition-loader'
+import { SettingsProvider } from '@/hooks/use-settings'
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://econexus.vercel.app'),
@@ -37,12 +38,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <LoadingProvider>
-          <WalletProvider>
-            <PageTransitionLoader />
-            {children}
-          </WalletProvider>
-        </LoadingProvider>
+        <SettingsProvider>
+          <LoadingProvider>
+            <WalletProvider>
+              <PageTransitionLoader />
+              {children}
+            </WalletProvider>
+          </LoadingProvider>
+        </SettingsProvider>
       </body>
     </html>
   )

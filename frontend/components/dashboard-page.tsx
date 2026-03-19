@@ -22,11 +22,7 @@ import {
   SettingsIcon,
   LeafIcon,
   Search,
-  LogOutIcon,
-  UserIcon,
-  BellIcon,
-  ShieldIcon,
-  InfoIcon
+  LogOutIcon
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -43,6 +39,7 @@ import { ProposalSearchEngine, SearchResult } from "@/lib/proposal-search"
 import { favoritesManager } from "@/lib/proposal-favorites"
 import dynamic from "next/dynamic"
 import { memberTracker } from '@/lib/member-tracker'
+import { useSettings, LANGUAGES } from '@/hooks/use-settings'
 
 // Lazy load heavy components to improve initial page load
 const VotingHistory = dynamic(() => import("@/components/voting-history").then(mod => ({ default: mod.VotingHistory })), {
@@ -61,6 +58,7 @@ const NotificationsPanel = dynamic(() => import("@/components/notifications-pane
 export function DashboardPage() {
   const { isConnected, address, balance, disconnect } = useWalletContext()
   const router = useRouter()
+  const { theme, language, t, setTheme, setLanguage } = useSettings()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const { getProposals, getTotalProposals, getBlockchainStats, voteOnProposal, deleteProposal } = useClimateDAO()
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
@@ -453,50 +451,60 @@ export function DashboardPage() {
 
                 {settingsOpen && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setSettingsOpen(false)} />
-                    <div className="absolute right-0 top-10 z-50 w-56 bg-slate-900/95 backdrop-blur-xl border border-white/15 rounded-2xl shadow-2xl overflow-hidden">
-                      {/* Wallet info header */}
+                    <div className="fixed inset-0 z-40" onClick={() => { setSettingsOpen(false); setLangOpen(false); }} />
+                    <div className="absolute right-0 top-10 z-50 w-60 bg-slate-900/95 backdrop-blur-xl border border-white/15 rounded-2xl shadow-2xl overflow-hidden">
+
+                      {/* Wallet header */}
                       {isConnected && (
                         <div className="px-4 py-3 border-b border-white/10">
                           <div className="flex items-center gap-2 mb-1">
                             <div className="w-2 h-2 bg-green-400 rounded-full" />
-                            <span className="text-white/80 text-xs font-medium">Connected</span>
+                            <span className="text-white/80 text-xs font-medium">{t.connected}</span>
                           </div>
                           <p className="text-white/40 text-xs font-mono truncate">{address?.slice(0,10)}...{address?.slice(-6)}</p>
                           <p className="text-white/60 text-xs mt-0.5">{balance.toFixed(3)} ALGO</p>
                         </div>
                       )}
 
-                      {/* Menu items */}
-                      <div className="py-1.5">
-                        <button
-                          onClick={() => { setSettingsOpen(false); router.push('/submit-proposal'); }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                        >
-                          <PlusIcon className="w-4 h-4 text-blue-400" />
-                          Submit Proposal
-                        </button>
-                        <button
-                          onClick={() => { setSettingsOpen(false); router.push('/impact-analytics'); }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                        >
-                          <BarChart3Icon className="w-4 h-4 text-green-400" />
-                          Impact Analytics
-                        </button>
-                        <button
-                          onClick={() => { setSettingsOpen(false); router.push('/proposal-review'); }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                        >
-                          <BrainCircuitIcon className="w-4 h-4 text-purple-400" />
-                          AI Review
-                        </button>
-                        <button
-                          onClick={() => { setSettingsOpen(false); router.push('/submission-guidelines'); }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                        >
-                          <InfoIcon className="w-4 h-4 text-yellow-400" />
-                          Submission Guidelines
-                        </button>
+                      <div className="py-2 px-3 space-y-1">
+
+                        {/* Theme toggle */}
+                        <div className="flex items-center justify-between py-2">
+                          <span className="text-white/70 text-sm flex items-center gap-2">
+                            {theme === 'dark' ? '🌙' : '☀️'} {t.theme}
+                          </span>
+                          <button
+                            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                            className={`relative w-11 h-6 rounded-full transition-colors ${
+                              theme === 'light' ? 'bg-blue-500' : 'bg-white/20'
+                            }`}
+                          >
+                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                              theme === 'light' ? 'translate-x-5' : 'translate-x-0'
+                            }`} />
+                          </button>
+                        </div>
+
+                        {/* Language selector */}
+                        <div className="py-1">
+                          <p className="text-white/50 text-xs mb-1.5">🌐 {t.language}</p>
+                          <div className="grid grid-cols-2 gap-1">
+                            {LANGUAGES.map(l => (
+                              <button
+                                key={l.code}
+                                onClick={() => setLanguage(l.code)}
+                                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs transition-colors ${
+                                  language === l.code
+                                    ? 'bg-blue-500/30 text-blue-300 border border-blue-500/40'
+                                    : 'text-white/60 hover:bg-white/10 hover:text-white'
+                                }`}
+                              >
+                                <span>{l.flag}</span>
+                                <span className="truncate">{l.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
 
                       {/* Disconnect */}
@@ -506,7 +514,7 @@ export function DashboardPage() {
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
                         >
                           <LogOutIcon className="w-4 h-4" />
-                          Disconnect Wallet
+                          {t.disconnect}
                         </button>
                       </div>
                     </div>
@@ -542,7 +550,7 @@ export function DashboardPage() {
           <div className="mb-6 sm:mb-8">
             <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full text-xs sm:text-sm text-white/80 mb-4">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-             Take One step Towards a Greener Future
+             {t.tagline}
             </div>
           </div>
 

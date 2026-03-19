@@ -93,6 +93,31 @@ body {
   }
 }
 
+/* Light mode overrides for the dark-first design */
+html.light .bg-gradient-to-br.from-slate-900,
+html.light .bg-gradient-to-br.from-slate-900.via-blue-900.to-slate-900 {
+  --tw-gradient-from: #e8f4f8;
+  --tw-gradient-via: #dbeafe;
+  --tw-gradient-to: #e8f4f8;
+}
+html.light { background: #f0f7ff; }
+html.light body { background: #f0f7ff; color: #0f172a; }
+html.light .text-white { color: #0f172a !important; }
+html.light .text-white\/80 { color: #1e293b !important; }
+html.light .text-white\/70 { color: #334155 !important; }
+html.light .text-white\/60 { color: #475569 !important; }
+html.light .text-white\/50 { color: #64748b !important; }
+html.light .text-white\/40 { color: #94a3b8 !important; }
+html.light .text-white\/30 { color: #cbd5e1 !important; }
+html.light .bg-white\/5  { background: rgba(15,23,42,0.04) !important; }
+html.light .bg-white\/10 { background: rgba(15,23,42,0.08) !important; }
+html.light .bg-white\/15 { background: rgba(15,23,42,0.10) !important; }
+html.light .border-white\/10 { border-color: rgba(15,23,42,0.12) !important; }
+html.light .border-white\/20 { border-color: rgba(15,23,42,0.18) !important; }
+html.light .bg-white\/10.backdrop-blur-xl { background: rgba(255,255,255,0.75) !important; }
+html.light nav .bg-white\/10 { background: rgba(255,255,255,0.80) !important; }
+html.light .fixed.inset-0 .bg-gradient-to-br { background: linear-gradient(135deg,#e0f2fe,#dbeafe,#e0f2fe) !important; }
+
 /* Moving gradient background animation */
 @keyframes moving-gradient {
   0% {
