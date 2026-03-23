@@ -37,8 +37,17 @@ export default function ProposalDetailPage() {
   const [aiReview, setAiReview] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [reputation, setReputation] = useState<any>(null)
-  const [milestoneVoting, setMilestoneVoting] = useState<Record<number, 'for' | 'against' | null>>({})
+  const [milestoneVoting, setMilestoneVoting] = useState<Record<number, 'for' | 'against'>>({})  
   const [milestoneVotingId, setMilestoneVotingId] = useState<number | null>(null)
+
+  // Load persisted milestone votes for this wallet+proposal from localStorage
+  useEffect(() => {
+    if (!address || !proposalId) return
+    try {
+      const stored = localStorage.getItem(`milestone_votes_${proposalId}_${address}`)
+      if (stored) setMilestoneVoting(JSON.parse(stored))
+    } catch {}
+  }, [address, proposalId])
   const [showMilestoneForm, setShowMilestoneForm] = useState(false)
   const [draftMilestones, setDraftMilestones] = useState([
     { title: '', description: '', percent: 33, status: 'pending', voteYes: 0, voteNo: 0 },
@@ -98,7 +107,10 @@ export default function ProposalDetailPage() {
         body: JSON.stringify({ id: proposal.id, milestones: updatedMilestones }),
       })
       setProposal((prev: any) => ({ ...prev, milestones: updatedMilestones }))
-      setMilestoneVoting(prev => ({ ...prev, [milestoneIdx]: vote }))
+      // Persist this wallet's vote so buttons hide on reload
+      const updated = { ...milestoneVoting, [milestoneIdx]: vote }
+      setMilestoneVoting(updated)
+      localStorage.setItem(`milestone_votes_${proposal.id}_${address}`, JSON.stringify(updated))
     } finally {
       setMilestoneVotingId(null)
     }
@@ -352,10 +364,12 @@ export default function ProposalDetailPage() {
                       const amount = Math.round((proposal.fundingAmount * m.percent) / 100)
                       const mTotal = (m.voteYes || 0) + (m.voteNo || 0)
                       const mYesPct = mTotal > 0 ? Math.round((m.voteYes / mTotal) * 100) : 0
-                      const myVote = milestoneVoting[i]
+                      const myVote = milestoneVoting[i]          // persisted vote for this wallet
                       const isVoting = milestoneVotingId === i
-                      const prevCompleted = i === 0 || proposal.milestones[i-1]?.status === 'completed'
-                      const canVote = m.status === 'pending' && prevCompleted && !myVote && address && address !== proposal.creator
+                      const isProposer = address === proposal.creator
+                      // milestone i is open when all previous milestones are completed
+                      const prevCompleted = i === 0 || proposal.milestones[i - 1]?.status === 'completed'
+                      const canVote = m.status === 'pending' && prevCompleted && !myVote && !isProposer && !!address
 
                       return (
                         <Card key={i} className={`border rounded-2xl ${
@@ -370,7 +384,7 @@ export default function ProposalDetailPage() {
                                   i === 0 ? 'bg-blue-500/30 text-blue-300' :
                                   i === 1 ? 'bg-purple-500/30 text-purple-300' :
                                   'bg-green-500/30 text-green-300'
-                                }`}>{i+1}</span>
+                                }`}>{i + 1}</span>
                                 <span className="text-white font-medium text-sm">{m.title}</span>
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
@@ -384,37 +398,56 @@ export default function ProposalDetailPage() {
                                 </Badge>
                               </div>
                             </div>
+
                             {m.description && <p className="text-white/50 text-xs pl-8">{m.description}</p>}
+
+                            {/* Vote bar — always visible once anyone has voted */}
                             {mTotal > 0 && (
                               <div className="pl-8 space-y-1">
                                 <div className="flex justify-between text-xs text-white/40">
-                                  <span>✓ {m.voteYes||0} yes ({mYesPct}%)</span>
-                                  <span>✗ {m.voteNo||0} no · needs 3</span>
+                                  <span>✓ {m.voteYes || 0} yes ({mYesPct}%)</span>
+                                  <span>✗ {m.voteNo || 0} no · needs 3</span>
                                 </div>
                                 <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                  <div className={`h-full rounded-full ${
-                                    m.status==='completed'?'bg-green-500':m.status==='failed'?'bg-red-500':'bg-blue-500'
-                                  }`} style={{width:`${mYesPct}%`}} />
+                                  <div className={`h-full rounded-full transition-all ${
+                                    m.status === 'completed' ? 'bg-green-500' :
+                                    m.status === 'failed'    ? 'bg-red-500' : 'bg-blue-500'
+                                  }`} style={{ width: `${mYesPct}%` }} />
                                 </div>
                               </div>
                             )}
+
+                            {/* Vote buttons — community only, once per wallet */}
                             {canVote && (
                               <div className="flex gap-2 pl-8 pt-1">
-                                <Button size="sm" onClick={() => handleMilestoneVote(i,'for')} disabled={isVoting}
+                                <Button size="sm" onClick={() => handleMilestoneVote(i, 'for')} disabled={isVoting}
                                   className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-xl h-8 text-xs">
-                                  {isVoting?'...':'✓ Approve Release'}
+                                  {isVoting ? '...' : '✓ Approve Release'}
                                 </Button>
-                                <Button size="sm" onClick={() => handleMilestoneVote(i,'against')} disabled={isVoting}
+                                <Button size="sm" onClick={() => handleMilestoneVote(i, 'against')} disabled={isVoting}
                                   className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl h-8 text-xs">
-                                  {isVoting?'...':'✗ Reject'}
+                                  {isVoting ? '...' : '✗ Reject'}
                                 </Button>
                               </div>
                             )}
-                            {m.status === 'pending' && !prevCompleted && (
-                              <p className="text-xs text-white/30 pl-8">Complete previous milestone first</p>
+
+                            {/* Already voted — show what they voted */}
+                            {myVote && m.status === 'pending' && (
+                              <p className={`text-xs pl-8 ${
+                                myVote === 'for' ? 'text-green-400/70' : 'text-red-400/70'
+                              }`}>
+                                ✓ You voted {myVote === 'for' ? 'Approve' : 'Reject'} — waiting for more votes
+                              </p>
                             )}
-                            {m.status === 'pending' && prevCompleted && address === proposal.creator && (
-                              <p className="text-xs text-white/30 pl-8">Waiting for community to vote on this milestone</p>
+
+                            {/* Locked — previous milestone not done */}
+                            {m.status === 'pending' && !prevCompleted && (
+                              <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} is completed</p>
+                            )}
+
+                            {/* Proposer view */}
+                            {m.status === 'pending' && prevCompleted && isProposer && (
+                              <p className="text-xs text-white/30 pl-8">⏳ Waiting for community to vote ({mTotal}/3 votes so far)</p>
                             )}
                           </CardContent>
                         </Card>
