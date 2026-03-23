@@ -16,6 +16,7 @@ async function ensureTables() {
       category text NOT NULL,
       ai_score numeric DEFAULT 0,
       ai_review jsonb DEFAULT NULL,
+      milestones jsonb DEFAULT NULL,
       creation_time bigint NOT NULL,
       created_at timestamptz DEFAULT now()
     );
@@ -28,7 +29,17 @@ async function ensureTables() {
       voted_at timestamptz DEFAULT now(),
       UNIQUE(proposal_id, voter_address)
     );
+    CREATE TABLE IF NOT EXISTS reputation (
+      wallet_address text PRIMARY KEY,
+      proposals_submitted integer NOT NULL DEFAULT 0,
+      milestones_completed integer NOT NULL DEFAULT 0,
+      milestones_failed integer NOT NULL DEFAULT 0,
+      reputation_score integer NOT NULL DEFAULT 50,
+      max_funding_algo integer NOT NULL DEFAULT 100,
+      updated_at timestamptz DEFAULT now()
+    );
     ALTER TABLE proposals ADD COLUMN IF NOT EXISTS ai_review jsonb DEFAULT NULL;
+    ALTER TABLE proposals ADD COLUMN IF NOT EXISTS milestones jsonb DEFAULT NULL;
   `);
 }
 
@@ -46,6 +57,7 @@ function mapRow(row: any) {
     category: row.category,
     aiScore: Number(row.ai_score),
     aiReview: row.ai_review || null,
+    milestones: row.milestones || null,
     creationTime: Number(row.creation_time),
   };
 }
@@ -80,12 +92,24 @@ export async function POST(req: NextRequest) {
     await ensureTables();
     const body = await req.json();
     await pool.query(
-      `INSERT INTO proposals (id, title, description, creator, funding_amount, vote_yes, vote_no, status, end_time, category, ai_score, creation_time)
-       VALUES ($1,$2,$3,$4,$5,0,0,'active',$6,$7,$8,$9)
+      `INSERT INTO proposals (id, title, description, creator, funding_amount, vote_yes, vote_no, status, end_time, category, ai_score, milestones, creation_time)
+       VALUES ($1,$2,$3,$4,$5,0,0,'active',$6,$7,$8,$9,$10)
        ON CONFLICT (id) DO NOTHING`,
       [body.id, body.title, body.description, body.creator, body.fundingAmount,
-       body.endTime, body.category, body.aiScore || 0, body.creationTime || Date.now()]
+       body.endTime, body.category, body.aiScore || 0,
+       body.milestones ? JSON.stringify(body.milestones) : null,
+       body.creationTime || Date.now()]
     );
+    // Upsert reputation: increment proposals_submitted
+    if (body.creator) {
+      await pool.query(
+        `INSERT INTO reputation (wallet_address, proposals_submitted, reputation_score, max_funding_algo)
+         VALUES ($1, 1, 50, 100)
+         ON CONFLICT (wallet_address) DO UPDATE
+         SET proposals_submitted = reputation.proposals_submitted + 1, updated_at = now()`,
+        [body.creator]
+      );
+    }
     return NextResponse.json({ success: true });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -97,7 +121,7 @@ export async function PATCH(req: NextRequest) {
   try {
     await ensureTables();
     const body = await req.json();
-    const { id, status, vote, ai_review } = body;
+    const { id, status, vote, ai_review, milestones } = body;
 
     if (status) {
       await pool.query('UPDATE proposals SET status = $1 WHERE id = $2', [status, id]);
@@ -109,6 +133,25 @@ export async function PATCH(req: NextRequest) {
     }
     if (ai_review !== undefined) {
       await pool.query('UPDATE proposals SET ai_review = $1 WHERE id = $2', [JSON.stringify(ai_review), id]);
+    }
+    if (milestones !== undefined) {
+      await pool.query('UPDATE proposals SET milestones = $1 WHERE id = $2', [JSON.stringify(milestones), id]);
+      // Update reputation based on milestone completions/failures
+      const { rows } = await pool.query('SELECT creator FROM proposals WHERE id = $1', [id]);
+      if (rows.length > 0) {
+        const completed = milestones.filter((m: any) => m.status === 'completed').length;
+        const failed = milestones.filter((m: any) => m.status === 'failed').length;
+        const score = Math.min(100, Math.max(0, 50 + completed * 15 - failed * 20));
+        const maxFunding = completed >= 4 ? 1000 : completed >= 2 ? 500 : completed >= 1 ? 300 : 100;
+        await pool.query(
+          `INSERT INTO reputation (wallet_address, milestones_completed, milestones_failed, reputation_score, max_funding_algo)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (wallet_address) DO UPDATE
+           SET milestones_completed = $2, milestones_failed = $3,
+               reputation_score = $4, max_funding_algo = $5, updated_at = now()`,
+          [rows[0].creator, completed, failed, score, maxFunding]
+        );
+      }
     }
     return NextResponse.json({ success: true });
   } catch (err: any) {

@@ -10,9 +10,10 @@ import { useAIReview } from "@/hooks/use-ai-review"
 import { AIReviewDisplay } from "@/components/ai-review-display"
 import Link from "next/link"
 import { WalletGuard } from "@/components/wallet-guard"
+import { useWalletContext } from "@/hooks/use-wallet"
 import {
   ArrowLeftIcon, SparklesIcon, CoinsIcon, ClockIcon,
-  CheckCircleIcon, XCircleIcon, UsersIcon, UserIcon
+  CheckCircleIcon, XCircleIcon, UsersIcon, UserIcon, ShieldIcon
 } from "lucide-react"
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -30,10 +31,14 @@ export default function ProposalDetailPage() {
   const params = useParams()
   const proposalId = params?.id ? Number(params.id) : null
   const { getProposal } = useClimateDAO()
+  const { address } = useWalletContext()
   const { isAnalyzing, reviewResult, analyzeProposalData } = useAIReview()
   const [proposal, setProposal] = useState<any>(null)
   const [aiReview, setAiReview] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [reputation, setReputation] = useState<any>(null)
+  const [milestoneVoting, setMilestoneVoting] = useState<Record<number, 'for' | 'against' | null>>({})
+  const [milestoneVotingId, setMilestoneVotingId] = useState<number | null>(null)
 
   useEffect(() => {
     if (reviewResult) setAiReview(reviewResult)
@@ -54,12 +59,45 @@ export default function ProposalDetailPage() {
             if (stored) setAiReview(JSON.parse(stored))
           } catch {}
         }
+        // Load reputation for proposer
+        if (p?.creator) {
+          try {
+            const r = await fetch(`/api/reputation?wallet=${encodeURIComponent(p.creator)}`)
+            if (r.ok) setReputation(await r.json())
+          } catch {}
+        }
       } finally {
         setLoading(false)
       }
     }
     load()
   }, [proposalId])
+
+  const handleMilestoneVote = async (milestoneIdx: number, vote: 'for' | 'against') => {
+    if (!proposal || !address) return
+    setMilestoneVotingId(milestoneIdx)
+    try {
+      const updatedMilestones = proposal.milestones.map((m: any, i: number) => {
+        if (i !== milestoneIdx) return m
+        const newVoteYes = vote === 'for' ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
+        const newVoteNo = vote === 'against' ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
+        const total = newVoteYes + newVoteNo
+        const newStatus = total >= 3
+          ? (newVoteYes / total > 0.5 ? 'completed' : 'failed')
+          : m.status
+        return { ...m, voteYes: newVoteYes, voteNo: newVoteNo, status: newStatus }
+      })
+      await fetch('/api/proposals', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: proposal.id, milestones: updatedMilestones }),
+      })
+      setProposal((prev: any) => ({ ...prev, milestones: updatedMilestones }))
+      setMilestoneVoting(prev => ({ ...prev, [milestoneIdx]: vote }))
+    } finally {
+      setMilestoneVotingId(null)
+    }
+  }
 
   if (!proposalId) return null
 
@@ -167,6 +205,124 @@ export default function ProposalDetailPage() {
                       <p className="text-green-400 font-semibold text-sm">Funding Released!</p>
                       <p className="text-green-300/70 text-xs">${proposal.fundingAmount.toLocaleString()} approved for this project.</p>
                     </div>
+                  </div>
+                )}
+
+                {/* Reputation badge */}
+                {reputation && (
+                  <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 flex items-center gap-3">
+                    <ShieldIcon className={`w-5 h-5 shrink-0 ${
+                      reputation.reputation_score >= 75 ? 'text-green-400' :
+                      reputation.reputation_score >= 50 ? 'text-yellow-400' : 'text-red-400'
+                    }`} />
+                    <div className="flex-1">
+                      <p className="text-white/80 text-sm font-medium">Proposer Reputation</p>
+                      <div className="flex items-center gap-3 mt-1 flex-wrap">
+                        <span className={`text-xs font-bold ${
+                          reputation.reputation_score >= 75 ? 'text-green-400' :
+                          reputation.reputation_score >= 50 ? 'text-yellow-400' : 'text-red-400'
+                        }`}>{reputation.reputation_score}/100</span>
+                        <span className="text-white/40 text-xs">{reputation.milestones_completed} milestones completed</span>
+                        <span className="text-white/40 text-xs">{reputation.proposals_submitted} proposals submitted</span>
+                        <span className="text-white/40 text-xs">Max funding: {reputation.max_funding_algo} ALGO</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Milestones */}
+                {proposal.milestones && proposal.milestones.length > 0 && (
+                  <div className="space-y-3">
+                    <h2 className="text-white font-semibold flex items-center gap-2">
+                      <CoinsIcon className="w-4 h-4 text-purple-400" />
+                      Funding Milestones
+                    </h2>
+                    {proposal.milestones.map((m: any, i: number) => {
+                      const amount = Math.round((proposal.fundingAmount * m.percent) / 100)
+                      const totalVotes = (m.voteYes || 0) + (m.voteNo || 0)
+                      const yesPercent = totalVotes > 0 ? Math.round((m.voteYes / totalVotes) * 100) : 0
+                      const myVote = milestoneVoting[i]
+                      const isVoting = milestoneVotingId === i
+                      const prevCompleted = i === 0 || proposal.milestones[i - 1]?.status === 'completed'
+                      const canVote = proposal.status === 'passed' && m.status === 'pending' && prevCompleted && !myVote && address && address !== proposal.creator
+
+                      return (
+                        <Card key={i} className={`border rounded-2xl ${
+                          m.status === 'completed' ? 'bg-green-500/5 border-green-500/20' :
+                          m.status === 'failed'    ? 'bg-red-500/5 border-red-500/20' :
+                          'bg-white/5 border-white/10'
+                        }`}>
+                          <CardContent className="p-4 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  i === 0 ? 'bg-blue-500/30 text-blue-300' :
+                                  i === 1 ? 'bg-purple-500/30 text-purple-300' :
+                                  'bg-green-500/30 text-green-300'
+                                }`}>{i + 1}</span>
+                                <span className="text-white font-medium text-sm">{m.title || `Milestone ${i + 1}`}</span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-white/60 text-xs">${amount.toLocaleString()} ({m.percent}%)</span>
+                                <Badge className={`text-xs ${
+                                  m.status === 'completed' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                                  m.status === 'failed'    ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                                  'bg-white/10 text-white/50 border-white/20'
+                                }`}>
+                                  {m.status === 'completed' ? '✓ Released' : m.status === 'failed' ? '✗ Rejected' : '⏳ Pending'}
+                                </Badge>
+                              </div>
+                            </div>
+
+                            {m.description && (
+                              <p className="text-white/50 text-xs pl-8">{m.description}</p>
+                            )}
+
+                            {/* Milestone vote bar */}
+                            {totalVotes > 0 && (
+                              <div className="pl-8 space-y-1">
+                                <div className="flex justify-between text-xs text-white/40">
+                                  <span>✓ {m.voteYes || 0} yes ({yesPercent}%)</span>
+                                  <span>✗ {m.voteNo || 0} no</span>
+                                </div>
+                                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full transition-all ${
+                                    m.status === 'completed' ? 'bg-green-500' :
+                                    m.status === 'failed' ? 'bg-red-500' : 'bg-blue-500'
+                                  }`} style={{ width: `${yesPercent}%` }} />
+                                </div>
+                                <p className="text-xs text-white/30">{totalVotes} vote{totalVotes !== 1 ? 's' : ''} · needs 3 to decide</p>
+                              </div>
+                            )}
+
+                            {/* Milestone vote buttons */}
+                            {canVote && (
+                              <div className="flex gap-2 pl-8 pt-1">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleMilestoneVote(i, 'for')}
+                                  disabled={isVoting}
+                                  className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-xl h-8 text-xs"
+                                >
+                                  {isVoting ? '...' : '✓ Approve Release'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleMilestoneVote(i, 'against')}
+                                  disabled={isVoting}
+                                  className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl h-8 text-xs"
+                                >
+                                  {isVoting ? '...' : '✗ Reject'}
+                                </Button>
+                              </div>
+                            )}
+                            {proposal.status === 'passed' && m.status === 'pending' && !prevCompleted && (
+                              <p className="text-xs text-white/30 pl-8">Complete previous milestone first</p>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                   </div>
                 )}
 

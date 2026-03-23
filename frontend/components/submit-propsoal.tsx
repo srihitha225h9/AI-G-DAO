@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeftIcon, UploadIcon, FileTextIcon, DollarSignIcon, CalendarIcon, LeafIcon } from "lucide-react"
+import { ArrowLeftIcon, UploadIcon, FileTextIcon, DollarSignIcon, CalendarIcon, LeafIcon, ChevronDownIcon } from "lucide-react"
 import Link from "next/link"
 import { useWalletContext } from "@/hooks/use-wallet"
 import { useClimateDAO } from "@/hooks/use-climate-dao"
@@ -16,6 +16,19 @@ import dynamic from "next/dynamic"
 import { TransactionResult } from "@/lib/transaction-builder"
 import { checkDuplicateProposal } from "@/lib/duplicate-detection"
 import { climateDAOQuery } from "@/lib/blockchain-queries"
+
+const MILESTONE_SPLITS = [
+  { label: '33% / 34% / 33%', values: [33, 34, 33] },
+  { label: '30% / 40% / 30%', values: [30, 40, 30] },
+  { label: '25% / 50% / 25%', values: [25, 50, 25] },
+  { label: '50% / 30% / 20%', values: [50, 30, 20] },
+]
+
+const DEFAULT_MILESTONES = [
+  { title: '', description: '', percent: 33, status: 'pending' },
+  { title: '', description: '', percent: 34, status: 'pending' },
+  { title: '', description: '', percent: 33, status: 'pending' },
+]
 
 // Lazy load transaction components to improve initial page load
 const TransactionStatus = dynamic(() => import("@/components/transaction-status").then(mod => ({ default: mod.TransactionStatus })), {
@@ -40,6 +53,16 @@ export function SubmitProposalPage() {
     category: "",
     location: "",
   })
+
+  const [milestones, setMilestones] = useState(DEFAULT_MILESTONES.map(m => ({ ...m })))
+
+  const updateMilestone = (idx: number, field: string, value: string) => {
+    setMilestones(prev => prev.map((m, i) => i === idx ? { ...m, [field]: value } : m))
+  }
+
+  const applyMilestoneSplit = (values: number[]) => {
+    setMilestones(prev => prev.map((m, i) => ({ ...m, percent: values[i] })))
+  }
 
   // Transaction state
   const [transactionState, setTransactionState] = useState<{
@@ -123,6 +146,7 @@ export function SubmitProposalPage() {
         expectedImpact: formData.expectedImpact,
         category: formData.category,
         location: formData.location,
+        milestones,
       })
       
       // Update transaction state with success
@@ -142,6 +166,7 @@ export function SubmitProposalPage() {
         category: "",
         location: "",
       })
+      setMilestones(DEFAULT_MILESTONES.map(m => ({ ...m })))
       
       // Save proposal draft to sessionStorage and redirect to AI impact analysis page
       try {
@@ -153,6 +178,7 @@ export function SubmitProposalPage() {
             fundingAmount: fundingAmountNum,
             expectedImpact: formData.expectedImpact,
             location: formData.location,
+            milestones,
             txId: result.txId,
             proposalId: (result as any).proposalId || undefined
           }))
@@ -380,9 +406,7 @@ export function SubmitProposalPage() {
                         value={formData.duration}
                         onChange={(e) => handleInputChange("duration", e.target.value)}
                         className="w-full pl-4 pr-10 bg-white/5 border border-white/20 text-white rounded-xl px-3 py-2 sm:px-4 sm:py-3 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/40 text-sm sm:text-base h-10 sm:h-12 touch-manipulation appearance-none"
-                        style={{
-                          color: formData.duration ? 'white' : 'rgba(255, 255, 255, 0.4)'
-                        }}
+                        style={{ color: formData.duration ? 'white' : 'rgba(255, 255, 255, 0.4)' }}
                       >
                         <option value="" disabled className="bg-slate-800 text-white/60">Select duration</option>
                         <option value="3-months" className="bg-slate-800 text-white">3 months</option>
@@ -392,13 +416,67 @@ export function SubmitProposalPage() {
                         <option value="3-years+" className="bg-slate-800 text-white">3+ years</option>
                       </select>
                       <CalendarIcon className="absolute right-8 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
-                      {/* Custom dropdown arrow */}
                       <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                         <svg className="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Milestones */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-white font-medium text-sm">Funding Milestones *</Label>
+                    <div className="flex gap-1 flex-wrap justify-end">
+                      {MILESTONE_SPLITS.map(s => (
+                        <button
+                          key={s.label}
+                          type="button"
+                          onClick={() => applyMilestoneSplit(s.values)}
+                          className="text-xs px-2 py-1 rounded-lg bg-white/5 border border-white/15 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-white/40 text-xs">Split your funding into 3 stages. Community votes to release each tranche after you submit proof of work.</p>
+                  <div className="space-y-3">
+                    {milestones.map((m, i) => {
+                      const algoAmount = formData.fundingAmount ? Math.round((parseInt(formData.fundingAmount) * m.percent) / 100) : 0
+                      return (
+                        <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4 space-y-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                              i === 0 ? 'bg-blue-500/30 text-blue-300' :
+                              i === 1 ? 'bg-purple-500/30 text-purple-300' :
+                              'bg-green-500/30 text-green-300'
+                            }`}>{i + 1}</span>
+                            <span className="text-white/70 text-xs font-medium">Milestone {i + 1} — {m.percent}%{algoAmount > 0 ? ` ($${algoAmount.toLocaleString()})` : ''}</span>
+                          </div>
+                          <Input
+                            placeholder={[
+                              'e.g. Purchase equipment & permits',
+                              'e.g. Installation & setup complete',
+                              'e.g. System operational, photos submitted'
+                            ][i]}
+                            value={m.title}
+                            onChange={e => updateMilestone(i, 'title', e.target.value)}
+                            required
+                            className="bg-white/5 border-white/15 text-white placeholder-white/30 rounded-lg text-sm h-9"
+                          />
+                          <textarea
+                            placeholder="Describe what proof you will submit for this milestone..."
+                            value={m.description}
+                            onChange={e => updateMilestone(i, 'description', e.target.value)}
+                            rows={2}
+                            className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-white/30"
+                          />
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
 
