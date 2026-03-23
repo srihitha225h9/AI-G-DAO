@@ -69,6 +69,8 @@ export function DashboardPage() {
   const [userProposals, setUserProposals] = useState<any[]>([])
   const [showMyProposals, setShowMyProposals] = useState(false)
   const [totalProposalsCount, setTotalProposalsCount] = useState(0)
+  const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
+  const TREASURY_ADDR = '5TVL4FSSJ7OL245FRMZALZQICP3CTRT262S7YUFTLK3ZBBBFVKELOEV5XM'
   
   // NEW: Filtering state
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
@@ -237,6 +239,22 @@ export function DashboardPage() {
     setCurrentTime(new Date())
   }, [])
 
+  // Fetch treasury balance live from Algorand, refresh every 30s
+  useEffect(() => {
+    const fetchTreasury = async () => {
+      try {
+        const res = await fetch('/api/treasury')
+        if (res.ok) {
+          const data = await res.json()
+          setTreasuryBalance(data.balanceAlgo)
+        }
+      } catch {}
+    }
+    fetchTreasury()
+    const interval = setInterval(fetchTreasury, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
 
   const handleDeleteProposal = async (proposalId: number) => {
     if (!confirm('Are you sure you want to delete this proposal? This action cannot be undone.')) {
@@ -367,7 +385,15 @@ export function DashboardPage() {
       gradient: "from-green-500 to-emerald-500", 
       shadow: "shadow-green-500/25"
     },
-
+    {
+      title: "DAO Treasury",
+      description: treasuryBalance !== null ? `${treasuryBalance.toFixed(2)} ALGO available` : 'Loading...',
+      icon: CoinsIcon,
+      href: `https://testnet.algoexplorer.io/address/${TREASURY_ADDR}`,
+      gradient: "from-orange-500 to-yellow-500",
+      shadow: "shadow-orange-500/25",
+      external: true,
+    },
   ]
 
   const stats = [
@@ -560,19 +586,36 @@ export function DashboardPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
               {quickActions.map((action, index) => (
-                <Link key={index} href={action.href} className="group">
-                  <Card className={`bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl hover:bg-white/10 transition-all duration-500 group-hover:scale-105 ${action.shadow} hover:shadow-2xl`}>
-                    <CardContent className="p-8 text-center space-y-6">
-                      <div className={`w-20 h-20 bg-gradient-to-br ${action.gradient} rounded-3xl flex items-center justify-center mx-auto group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
-                        <action.icon className="w-10 h-10 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-white font-semibold text-lg mb-2">{action.title}</h3>
-                        <p className="text-white/60 text-sm leading-relaxed">{action.description}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                action.external ? (
+                  <a key={index} href={action.href} target="_blank" rel="noopener noreferrer" className="group">
+                    <Card className={`bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl hover:bg-white/10 transition-all duration-500 group-hover:scale-105 ${action.shadow} hover:shadow-2xl`}>
+                      <CardContent className="p-8 text-center space-y-4">
+                        <div className={`w-20 h-20 bg-gradient-to-br ${action.gradient} rounded-3xl flex items-center justify-center mx-auto group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
+                          <action.icon className="w-10 h-10 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-white font-semibold text-lg mb-1">{action.title}</h3>
+                          <p className="text-white/60 text-sm leading-relaxed">{action.description}</p>
+                          <p className="text-white/30 text-xs font-mono mt-2 truncate">{TREASURY_ADDR.slice(0,10)}...{TREASURY_ADDR.slice(-6)}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </a>
+                ) : (
+                  <Link key={index} href={action.href} className="group">
+                    <Card className={`bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl hover:bg-white/10 transition-all duration-500 group-hover:scale-105 ${action.shadow} hover:shadow-2xl`}>
+                      <CardContent className="p-8 text-center space-y-6">
+                        <div className={`w-20 h-20 bg-gradient-to-br ${action.gradient} rounded-3xl flex items-center justify-center mx-auto group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
+                          <action.icon className="w-10 h-10 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-white font-semibold text-lg mb-2">{action.title}</h3>
+                          <p className="text-white/60 text-sm leading-relaxed">{action.description}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                )
               ))}
             </div>
           )}
