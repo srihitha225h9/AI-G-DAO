@@ -65,8 +65,7 @@ export default function ProposalDetailPage() {
     const load = async () => {
       setLoading(true)
       try {
-        const p = await getProposal(proposalId)
-        setProposal(p)
+        let p = await getProposal(proposalId)
         if (p?.aiReview) {
           setAiReview(p.aiReview)
         } else {
@@ -75,6 +74,27 @@ export default function ProposalDetailPage() {
             if (stored) setAiReview(JSON.parse(stored))
           } catch {}
         }
+        // Fix any milestones whose votes already meet threshold but status wasn't updated
+        if (p?.milestones) {
+          let needsPatch = false
+          const fixed = p.milestones.map((m: any) => {
+            const total = (m.voteYes || 0) + (m.voteNo || 0)
+            if (m.status === 'pending' && total >= 2) {
+              needsPatch = true
+              return { ...m, status: (m.voteYes || 0) / total > 0.5 ? 'completed' : 'failed' }
+            }
+            return m
+          })
+          if (needsPatch) {
+            await fetch('/api/proposals', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: p.id, milestones: fixed }),
+            })
+            p = { ...p, milestones: fixed }
+          }
+        }
+        setProposal(p)
         // Load reputation for proposer
         if (p?.creator) {
           try {
