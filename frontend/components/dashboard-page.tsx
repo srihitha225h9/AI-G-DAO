@@ -389,10 +389,10 @@ export function DashboardPage() {
       title: "DAO Treasury",
       description: treasuryBalance !== null ? `${treasuryBalance.toFixed(2)} ALGO available` : 'Loading...',
       icon: CoinsIcon,
-      href: `https://testnet.algoexplorer.io/address/${TREASURY_ADDR}`,
+      href: `/treasury`,
       gradient: "from-orange-500 to-yellow-500",
       shadow: "shadow-orange-500/25",
-      external: true,
+      external: false,
     },
   ]
 
