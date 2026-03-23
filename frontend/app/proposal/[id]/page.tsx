@@ -156,11 +156,15 @@ export default function ProposalDetailPage() {
 
   const handleReleaseFunds = async (milestoneIdx: number, amountAlgo: number) => {
     if (!proposal || !address) return
+    if (address !== TREASURY) {
+      alert(`❌ Please connect the treasury wallet in Pera to release funds.\n\nTreasury: ${TREASURY.slice(0,8)}...${TREASURY.slice(-6)}`)
+      return
+    }
     setReleasingIdx(milestoneIdx)
     try {
       const params = await algodClient.getTransactionParams().do()
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
-        sender: address,
+        sender: TREASURY,
         receiver: proposal.creator,
         amount: Math.round(amountAlgo * 1_000_000),
         suggestedParams: params,
@@ -455,7 +459,8 @@ export default function ProposalDetailPage() {
                       const prevCompleted = i === 0 || proposal.milestones[i - 1]?.status === 'completed'
                       const canVote = m.status === 'pending' && prevCompleted && !myVote && !isProposer && !!address
                       const isReleased = releasedMilestones.includes(i)
-                      const canRelease = m.status === 'completed' && !isReleased && isProposer
+                      const isTreasury = address === TREASURY
+                      const canRelease = m.status === 'completed' && !isReleased && isTreasury
 
                       return (
                         <Card key={i} className={`border rounded-2xl ${
