@@ -98,7 +98,7 @@ export default function ProposalDetailPage() {
         const newVoteYes = vote === 'for' ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
         const newVoteNo = vote === 'against' ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
         const total = newVoteYes + newVoteNo
-        const newStatus = total >= 3 ? (newVoteYes / total > 0.5 ? 'completed' : 'failed') : m.status
+        const newStatus = total >= 2 ? (newVoteYes / total > 0.5 ? 'completed' : 'failed') : m.status
         return { ...m, voteYes: newVoteYes, voteNo: newVoteNo, status: newStatus }
       })
       await fetch('/api/proposals', {
@@ -406,7 +406,7 @@ export default function ProposalDetailPage() {
                               <div className="pl-8 space-y-1">
                                 <div className="flex justify-between text-xs text-white/40">
                                   <span>✓ {m.voteYes || 0} yes ({mYesPct}%)</span>
-                                  <span>✗ {m.voteNo || 0} no · needs 3</span>
+                                  <span>✗ {m.voteNo || 0} no · needs 2</span>
                                 </div>
                                 <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                                   <div className={`h-full rounded-full transition-all ${
@@ -447,7 +447,7 @@ export default function ProposalDetailPage() {
 
                             {/* Proposer view */}
                             {m.status === 'pending' && prevCompleted && isProposer && (
-                              <p className="text-xs text-white/30 pl-8">⏳ Waiting for community to vote ({mTotal}/3 votes so far)</p>
+                              <p className="text-xs text-white/30 pl-8">⏳ Waiting for community to vote ({mTotal}/2 votes so far)</p>
                             )}
                           </CardContent>
                         </Card>
