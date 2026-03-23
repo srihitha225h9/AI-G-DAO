@@ -11,10 +11,14 @@ import { AIReviewDisplay } from "@/components/ai-review-display"
 import Link from "next/link"
 import { WalletGuard } from "@/components/wallet-guard"
 import { useWalletContext } from "@/hooks/use-wallet"
+import algosdk from 'algosdk'
 import {
   ArrowLeftIcon, SparklesIcon, CoinsIcon, ClockIcon,
-  CheckCircleIcon, XCircleIcon, UsersIcon, UserIcon, ShieldIcon
+  CheckCircleIcon, XCircleIcon, UsersIcon, UserIcon, ShieldIcon, SendIcon
 } from "lucide-react"
+
+const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET!
+const algodClient = new algosdk.Algodv2('', 'https://testnet-api.algonode.cloud', '')
 
 const CATEGORY_COLORS: Record<string, string> = {
   'renewable-energy':       'bg-yellow-500/20 text-yellow-400 border-yellow-500/50',
@@ -31,7 +35,7 @@ export default function ProposalDetailPage() {
   const params = useParams()
   const proposalId = params?.id ? Number(params.id) : null
   const { getProposal } = useClimateDAO()
-  const { address } = useWalletContext()
+  const { address, signTransaction } = useWalletContext()
   const { isAnalyzing, reviewResult, analyzeProposalData } = useAIReview()
   const [proposal, setProposal] = useState<any>(null)
   const [aiReview, setAiReview] = useState<any>(null)
@@ -39,6 +43,9 @@ export default function ProposalDetailPage() {
   const [reputation, setReputation] = useState<any>(null)
   const [milestoneVoting, setMilestoneVoting] = useState<Record<number, 'for' | 'against'>>({})  
   const [milestoneVotingId, setMilestoneVotingId] = useState<number | null>(null)
+  const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
+  const [releasedMilestones, setReleasedMilestones] = useState<number[]>([])
+  const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
 
   // Load persisted milestone votes for this wallet+proposal from localStorage
   useEffect(() => {
@@ -95,6 +102,15 @@ export default function ProposalDetailPage() {
           }
         }
         setProposal(p)
+        // Load treasury balance + released milestones
+        try {
+          const t = await fetch(`/api/treasury?proposalId=${proposalId}`)
+          if (t.ok) {
+            const td = await t.json()
+            setTreasuryBalance(td.balanceAlgo)
+            setReleasedMilestones(td.released || [])
+          }
+        } catch {}
         // Load reputation for proposer
         if (p?.creator) {
           try {
@@ -135,6 +151,36 @@ export default function ProposalDetailPage() {
       localStorage.setItem(`milestone_votes_${proposal.id}_${address}`, JSON.stringify(updated))
     } finally {
       setMilestoneVotingId(null)
+    }
+  }
+
+  const handleReleaseFunds = async (milestoneIdx: number, amountAlgo: number) => {
+    if (!proposal || !address) return
+    setReleasingIdx(milestoneIdx)
+    try {
+      const params = await algodClient.getTransactionParams().do()
+      const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        sender: address,
+        receiver: proposal.creator,
+        amount: Math.round(amountAlgo * 1_000_000),
+        suggestedParams: params,
+        note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
+      })
+      const signed = await signTransaction(txn)
+      const { txId } = await algodClient.sendRawTransaction(signed).do()
+      await algosdk.waitForConfirmation(algodClient, txId, 4)
+      await fetch('/api/treasury', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposalId: proposal.id, milestoneIdx, amountAlgo, txId }),
+      })
+      setReleasedMilestones(prev => [...prev, milestoneIdx])
+      setTreasuryBalance(prev => prev !== null ? prev - amountAlgo : null)
+      alert(`✅ ${amountAlgo} ALGO released to proposer! TX: ${txId}`)
+    } catch (err: any) {
+      alert(`❌ Release failed: ${err.message}`)
+    } finally {
+      setReleasingIdx(null)
     }
   }
 
@@ -288,6 +334,21 @@ export default function ProposalDetailPage() {
                   </div>
                 )}
 
+                {/* Treasury balance */}
+                {proposal.status === 'passed' && treasuryBalance !== null && (
+                  <div className="bg-purple-500/10 border border-purple-500/30 rounded-2xl px-4 py-3 flex items-center gap-3">
+                    <CoinsIcon className="w-5 h-5 text-purple-400 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-purple-300 font-semibold text-sm">DAO Treasury</p>
+                      <p className="text-purple-200/70 text-xs font-mono">{TREASURY.slice(0,8)}...{TREASURY.slice(-6)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-purple-300 font-bold text-sm">{treasuryBalance.toFixed(2)} ALGO</p>
+                      <p className="text-purple-400/60 text-xs">available</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* ── MILESTONE SECTION (only shown after proposal passes) ── */}
                 {proposal.status === 'passed' && (
                   <div className="space-y-3">
@@ -384,14 +445,16 @@ export default function ProposalDetailPage() {
                     {/* Milestone cards — shown once proposer has defined them */}
                     {proposal.milestones && proposal.milestones.map((m: any, i: number) => {
                       const amount = Math.round((proposal.fundingAmount * m.percent) / 100)
+                      const amountAlgo = parseFloat((proposal.fundingAmount * m.percent / 100).toFixed(4))
                       const mTotal = (m.voteYes || 0) + (m.voteNo || 0)
                       const mYesPct = mTotal > 0 ? Math.round((m.voteYes / mTotal) * 100) : 0
-                      const myVote = milestoneVoting[i]          // persisted vote for this wallet
+                      const myVote = milestoneVoting[i]
                       const isVoting = milestoneVotingId === i
                       const isProposer = address === proposal.creator
-                      // milestone i is open when all previous milestones are completed
                       const prevCompleted = i === 0 || proposal.milestones[i - 1]?.status === 'completed'
                       const canVote = m.status === 'pending' && prevCompleted && !myVote && !isProposer && !!address
+                      const isReleased = releasedMilestones.includes(i)
+                      const canRelease = m.status === 'completed' && !isReleased && isProposer
 
                       return (
                         <Card key={i} className={`border rounded-2xl ${
@@ -416,7 +479,7 @@ export default function ProposalDetailPage() {
                                   m.status === 'failed'    ? 'bg-red-500/20 text-red-400 border-red-500/30' :
                                   'bg-white/10 text-white/50 border-white/20'
                                 }`}>
-                                  {m.status === 'completed' ? '✓ Released' : m.status === 'failed' ? '✗ Rejected' : '⏳ Pending'}
+                                  {isReleased ? '💸 Paid Out' : m.status === 'completed' ? '✅ Approved' : m.status === 'failed' ? '✗ Rejected' : '⏳ Pending'}
                                 </Badge>
                               </div>
                             </div>
@@ -467,9 +530,26 @@ export default function ProposalDetailPage() {
                               <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} is completed</p>
                             )}
 
-                            {/* Proposer view */}
+                            {/* Proposer view — waiting */}
                             {m.status === 'pending' && prevCompleted && isProposer && (
                               <p className="text-xs text-white/30 pl-8">⏳ Waiting for community to vote ({mTotal}/1 votes so far)</p>
+                            )}
+
+                            {/* Release funds button — proposer only, after community approves */}
+                            {canRelease && (
+                              <div className="pl-8 pt-1">
+                                <Button size="sm"
+                                  onClick={() => handleReleaseFunds(i, amountAlgo)}
+                                  disabled={releasingIdx === i}
+                                  className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
+                                  {releasingIdx === i ? '⏳ Sending...' : `💸 Release ${amountAlgo} ALGO`}
+                                </Button>
+                              </div>
+                            )}
+
+                            {/* Already released */}
+                            {isReleased && (
+                              <p className="text-xs text-purple-400/70 pl-8">💸 {amountAlgo} ALGO sent to proposer</p>
                             )}
                           </CardContent>
                         </Card>
