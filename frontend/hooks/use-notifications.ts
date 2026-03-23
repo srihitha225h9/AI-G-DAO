@@ -150,7 +150,7 @@ export function useNotifications() {
         const allIds = proposals.map(p => p.id);
         localStorage.setItem('seen_proposal_ids', JSON.stringify(allIds));
 
-        // Check for status changes (passed/rejected)
+        // Check for status changes (passed/rejected) and milestone submissions
         proposals.forEach(proposal => {
           if (proposal.status === 'passed' || proposal.status === 'rejected') {
             const outcome = proposal.status;
@@ -161,6 +161,21 @@ export function useNotifications() {
                 type: 'proposal_status',
                 title: outcome === 'passed' ? '✅ Proposal Passed!' : '❌ Proposal Rejected',
                 message: `"${proposal.title}" has ${outcome}${outcome === 'passed' ? ' — funding released!' : '.'}`,
+                proposalId: proposal.id,
+                priority: 'high'
+              });
+            }
+          }
+
+          // Notify community when proposer submits milestones (skip the proposer themselves)
+          if ((proposal as any).milestones && (proposal as any).milestones.length > 0 && proposal.creator !== address) {
+            const milestoneNotifKey = `notified_milestones_${proposal.id}`;
+            if (!localStorage.getItem(milestoneNotifKey)) {
+              localStorage.setItem(milestoneNotifKey, '1');
+              addNotification({
+                type: 'proposal_status',
+                title: '📋 Milestones Ready for Review!',
+                message: `"${proposal.title}" — the proposer has defined funding milestones. Vote to release each tranche.`,
                 proposalId: proposal.id,
                 priority: 'high'
               });
