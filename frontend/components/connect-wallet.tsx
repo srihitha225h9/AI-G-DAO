@@ -19,15 +19,16 @@ export function WalletConnectPage() {
       setLoading(true, "Connecting to Pera Wallet...")
       await connect()
       
-      // Auto-redirect to dashboard after successful connection
-      setLoading(true, "Redirecting to dashboard...")
+      // Redirect back to where user came from, or dashboard
+      const redirectTo = localStorage.getItem('redirect_after_connect') || '/dashboard'
+      localStorage.removeItem('redirect_after_connect')
+      setLoading(true, "Redirecting...")
       setTimeout(() => {
-        router.push('/dashboard')
-      }, 1000) // Give user a moment to see success message
+        router.push(redirectTo)
+      }, 1000)
     } catch (err) {
       console.error('Failed to connect wallet:', err)
     } finally {
-      // Keep loading state for redirect
       if (!isConnected) {
         setLoading(false)
       }
@@ -39,7 +40,9 @@ export function WalletConnectPage() {
   }
 
   const handleEnterDashboard = () => {
-    router.push('/dashboard')
+    const redirectTo = localStorage.getItem('redirect_after_connect') || '/dashboard'
+    localStorage.removeItem('redirect_after_connect')
+    router.push(redirectTo)
   }
 
   return (

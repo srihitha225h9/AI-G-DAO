@@ -24,6 +24,10 @@ export function WalletGuard({
 
   useEffect(() => {
     if (!loading && !isConnected) {
+      // Save current path so we can return after connecting
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('redirect_after_connect', window.location.pathname)
+      }
       router.push('/connect-wallet')
     }
   }, [isConnected, loading, router])

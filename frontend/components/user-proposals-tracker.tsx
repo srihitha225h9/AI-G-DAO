@@ -36,6 +36,24 @@ export function UserProposalsTracker() {
     };
 
     fetchUserProposals();
+
+    const handleCommunityProposalUpdate = () => {
+      fetchUserProposals();
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'climate_dao_proposals') {
+        fetchUserProposals();
+      }
+    };
+
+    window.addEventListener('climate_dao_proposals_updated', handleCommunityProposalUpdate);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('climate_dao_proposals_updated', handleCommunityProposalUpdate);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, [isConnected, address, getProposals]);
 
   const getStatusIcon = (status: string) => {

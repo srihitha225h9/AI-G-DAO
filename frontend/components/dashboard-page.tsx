@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge"
 import { 
   PlusIcon, 
   VoteIcon, 
-  BarChart3Icon, 
   FileTextIcon, 
   BrainCircuitIcon, 
   WalletIcon,
@@ -368,14 +367,7 @@ export function DashboardPage() {
       gradient: "from-green-500 to-emerald-500", 
       shadow: "shadow-green-500/25"
     },
-    {
-      title: "Impact Analytics",
-      description: "Track environmental impact",
-      icon: BarChart3Icon,
-      href: "/impact-analytics",
-      gradient: "from-orange-500 to-red-500",
-      shadow: "shadow-orange-500/25"
-    }
+
   ]
 
   const stats = [
