@@ -113,7 +113,10 @@ export default function ProposalDetailPage() {
     if (!proposal || !address) return
     setMilestoneVotingId(milestoneIdx)
     try {
-      const updatedMilestones = proposal.milestones.map((m: any, i: number) => {
+      // Always fetch fresh data from DB before voting to avoid overwriting other wallets' votes
+      const fresh = await getProposal(proposal.id)
+      const freshMilestones = fresh?.milestones || proposal.milestones
+      const updatedMilestones = freshMilestones.map((m: any, i: number) => {
         if (i !== milestoneIdx) return m
         const newVoteYes = vote === 'for' ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
         const newVoteNo = vote === 'against' ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
@@ -127,7 +130,6 @@ export default function ProposalDetailPage() {
         body: JSON.stringify({ id: proposal.id, milestones: updatedMilestones }),
       })
       setProposal((prev: any) => ({ ...prev, milestones: updatedMilestones }))
-      // Persist this wallet's vote so buttons hide on reload
       const updated = { ...milestoneVoting, [milestoneIdx]: vote }
       setMilestoneVoting(updated)
       localStorage.setItem(`milestone_votes_${proposal.id}_${address}`, JSON.stringify(updated))
