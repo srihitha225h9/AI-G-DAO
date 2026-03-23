@@ -48,7 +48,7 @@ function useWallet(): WalletState {
   const [isConnected, setIsConnected] = useState(false)
   const [address, setAddress] = useState<string | null>(null)
   const [balance, setBalance] = useState(0)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)  // true until reconnect check completes
   const [error, setError] = useState<string | null>(null)
 
   const fetchBalance = useCallback(async (addr: string) => {
@@ -164,15 +164,12 @@ function useWallet(): WalletState {
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        // Try to reconnect to Pera Wallet
         const accounts = await peraWallet.reconnectSession()
         if (accounts.length > 0) {
           const account = accounts[0]
           setAddress(account)
           setIsConnected(true)
           await fetchBalance(account)
-          
-          // Register member
           try {
             await memberTracker.registerMember(account)
           } catch (err) {
@@ -181,8 +178,9 @@ function useWallet(): WalletState {
         }
       } catch (err) {
         console.error('Failed to reconnect wallet:', err)
-        // Clear any invalid stored data
         localStorage.removeItem('wallet_address')
+      } finally {
+        setLoading(false)
       }
     }
 
