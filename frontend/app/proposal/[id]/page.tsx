@@ -167,8 +167,9 @@ export default function ProposalDetailPage() {
         note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
       })
       const signed = await signTransaction(txn)
-      const { txId } = await algodClient.sendRawTransaction(signed).do()
-      await algosdk.waitForConfirmation(algodClient, txId, 4)
+      const sendRes = await algodClient.sendRawTransaction(signed).do()
+      const txId = sendRes.txid || sendRes.txId || sendRes
+      await algosdk.waitForConfirmation(algodClient, txId, 10)
       await fetch('/api/treasury', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
