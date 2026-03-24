@@ -197,12 +197,22 @@ export default function ProposalDetailPage() {
     if (draftMilestones.some(m => !m.title.trim())) { alert('Please fill in all milestone titles'); return }
     setSavingMilestones(true)
     try {
+      // Milestone 0 starts active, rest locked — sequential unlock
+      const milestones = draftMilestones.map((m, i) => ({
+        id: i + 1,
+        title: m.title,
+        description: m.description,
+        fundingPercent: m.percent,
+        status: i === 0 ? 'active' : 'locked',
+        voteYes: 0,
+        voteNo: 0,
+      }))
       await fetch('/api/proposals', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: proposal.id, milestones: draftMilestones }),
+        body: JSON.stringify({ id: proposal.id, milestones }),
       })
-      setProposal((prev: any) => ({ ...prev, milestones: draftMilestones }))
+      setProposal((prev: any) => ({ ...prev, milestones }))
       setShowMilestoneForm(false)
     } finally {
       setSavingMilestones(false)
@@ -356,12 +366,86 @@ export default function ProposalDetailPage() {
                 )}
 
                 {/* ── MILESTONE FUNDING (sequential unlock) ── */}
-                {proposal.milestones && proposal.milestones.length > 0 && (
-                  <MilestoneFunding
-                    proposalId={proposal.id}
-                    proposalCreator={proposal.creator}
-                    totalFunding={proposal.fundingAmount}
-                  />
+                {proposal.status === 'passed' && (
+                  <>
+                    {/* Proposer hasn't defined milestones yet */}
+                    {!proposal.milestones && address === proposal.creator && !showMilestoneForm && (
+                      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 space-y-3">
+                        <p className="text-yellow-300 text-sm font-medium">🎉 Your proposal was approved!</p>
+                        <p className="text-white/60 text-xs">Define 3 milestones. Each one unlocks only after the previous is completed and funds released.</p>
+                        <Button onClick={() => setShowMilestoneForm(true)} className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30 rounded-xl text-sm">
+                          📋 Define Milestones
+                        </Button>
+                      </div>
+                    )}
+
+                    {!proposal.milestones && address !== proposal.creator && (
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <p className="text-white/50 text-sm text-center">⏳ Waiting for proposer to define funding milestones...</p>
+                      </div>
+                    )}
+
+                    {/* Milestone definition form */}
+                    {showMilestoneForm && (
+                      <Card className="bg-white/5 border border-yellow-500/20 rounded-2xl">
+                        <CardContent className="p-4 space-y-4">
+                          <p className="text-white/70 text-xs">Split your ${proposal.fundingAmount.toLocaleString()} into 3 stages. Percentages must total 100%.</p>
+                          <div className="flex gap-1 flex-wrap">
+                            {[[33,34,33],[30,40,30],[25,50,25],[50,30,20]].map(vals => (
+                              <button key={vals.join()} type="button"
+                                onClick={() => setDraftMilestones(prev => prev.map((m,i) => ({ ...m, percent: vals[i] })))}
+                                className="text-xs px-2 py-1 rounded-lg bg-white/5 border border-white/15 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+                              >{vals.join('% / ')}%</button>
+                            ))}
+                          </div>
+                          {draftMilestones.map((m, i) => {
+                            const amt = Math.round((proposal.fundingAmount * m.percent) / 100)
+                            return (
+                              <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-3 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                    i === 0 ? 'bg-blue-500/30 text-blue-300' : i === 1 ? 'bg-purple-500/30 text-purple-300' : 'bg-green-500/30 text-green-300'
+                                  }`}>{i+1}</span>
+                                  <span className="text-white/60 text-xs">Stage {i+1} — {m.percent}% (${amt.toLocaleString()})</span>
+                                  <input type="number" min={1} max={98} value={m.percent}
+                                    onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, percent: Number(e.target.value)} : x))}
+                                    className="ml-auto w-14 bg-white/10 border border-white/20 text-white text-xs rounded-lg px-2 py-1 text-center"
+                                  />
+                                  <span className="text-white/40 text-xs">%</span>
+                                </div>
+                                <input placeholder={['e.g. Purchase equipment & permits','e.g. Installation & setup complete','e.g. System operational, photos submitted'][i]}
+                                  value={m.title}
+                                  onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, title: e.target.value} : x))}
+                                  className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/30"
+                                />
+                                <textarea placeholder="What proof will you submit? (photos, invoices, reports...)"
+                                  value={m.description}
+                                  onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, description: e.target.value} : x))}
+                                  rows={2}
+                                  className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-white/30"
+                                />
+                              </div>
+                            )
+                          })}
+                          <div className="flex gap-2 pt-1">
+                            <Button variant="ghost" onClick={() => setShowMilestoneForm(false)} className="flex-1 text-white/50 hover:text-white border border-white/10 rounded-xl text-sm">Cancel</Button>
+                            <Button onClick={handleSaveMilestones} disabled={savingMilestones} className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm">
+                              {savingMilestones ? 'Saving...' : '✓ Submit Milestones'}
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Sequential milestone funding — shown once milestones are defined */}
+                    {proposal.milestones && proposal.milestones.length > 0 && (
+                      <MilestoneFunding
+                        proposalId={proposal.id}
+                        proposalCreator={proposal.creator}
+                        totalFunding={proposal.fundingAmount}
+                      />
+                    )}
+                  </>
                 )}
 
                 {/* Description */}
