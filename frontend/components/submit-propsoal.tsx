@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeftIcon, UploadIcon, FileTextIcon, DollarSignIcon, CalendarIcon, LeafIcon } from "lucide-react"
+import { ArrowLeftIcon, UploadIcon, FileTextIcon, DollarSignIcon, CalendarIcon, LeafIcon, PlusIcon, TrashIcon } from "lucide-react"
 import Link from "next/link"
 import { useWalletContext } from "@/hooks/use-wallet"
 import { useClimateDAO } from "@/hooks/use-climate-dao"
@@ -40,6 +40,28 @@ export function SubmitProposalPage() {
     category: "",
     location: "",
   })
+
+  // Milestone state
+  const [milestones, setMilestones] = useState([
+    { title: "", description: "", fundingPercent: 25 },
+    { title: "", description: "", fundingPercent: 25 },
+    { title: "", description: "", fundingPercent: 25 },
+    { title: "", description: "", fundingPercent: 25 },
+  ])
+
+  const totalPercent = milestones.reduce((s, m) => s + Number(m.fundingPercent), 0)
+
+  const addMilestone = () => {
+    setMilestones(prev => [...prev, { title: "", description: "", fundingPercent: 0 }])
+  }
+
+  const removeMilestone = (idx: number) => {
+    setMilestones(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  const updateMilestone = (idx: number, field: string, value: string | number) => {
+    setMilestones(prev => prev.map((m, i) => i === idx ? { ...m, [field]: value } : m))
+  }
 
   // Transaction state
   const [transactionState, setTransactionState] = useState<{
@@ -116,6 +138,22 @@ export function SubmitProposalPage() {
       const fundingAmountNum = parseInt(formData.fundingAmount) || 0
       
       // Submit proposal to blockchain
+      // Validate milestones add up to 100%
+      if (totalPercent !== 100) {
+        setTransactionState({ status: 'failed', error: `Milestone funding percentages must add up to 100% (currently ${totalPercent}%)` })
+        setLoading(false)
+        return
+      }
+
+      // Build milestone objects with sequential unlock logic
+      const builtMilestones = milestones.map((m, idx) => ({
+        id: idx + 1,
+        title: m.title,
+        description: m.description,
+        fundingPercent: Number(m.fundingPercent),
+        status: idx === 0 ? 'active' : 'locked',  // only first milestone starts active
+      }))
+
       const result = await submitProposal({
         title: formData.projectTitle,
         description: formData.description,
@@ -123,7 +161,8 @@ export function SubmitProposalPage() {
         expectedImpact: formData.expectedImpact,
         category: formData.category,
         location: formData.location,
-      })
+        milestones: builtMilestones,
+      } as any)
       
       // Update transaction state with success
       setTransactionState({
@@ -154,7 +193,8 @@ export function SubmitProposalPage() {
             expectedImpact: formData.expectedImpact,
             location: formData.location,
             txId: result.txId,
-            proposalId: (result as any).proposalId || undefined
+            proposalId: (result as any).proposalId || undefined,
+            milestones: builtMilestones,
           }))
         }
       } catch (err) {
@@ -396,6 +436,69 @@ export function SubmitProposalPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Milestones Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-white font-medium text-sm">Funding Milestones *</Label>
+                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                      totalPercent === 100 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                    }`}>
+                      {totalPercent}% / 100%
+                    </span>
+                  </div>
+                  <p className="text-white/50 text-xs">
+                    Define milestones — funds are released one by one only after each milestone is verified.
+                  </p>
+
+                  {milestones.map((m, idx) => (
+                    <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-white/70 text-xs font-medium">Milestone {idx + 1}</span>
+                        {milestones.length > 1 && (
+                          <button type="button" onClick={() => removeMilestone(idx)} className="text-red-400/60 hover:text-red-400">
+                            <TrashIcon className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <Input
+                        placeholder="Milestone title (e.g. Site preparation complete)"
+                        value={m.title}
+                        onChange={e => updateMilestone(idx, 'title', e.target.value)}
+                        required
+                        className="bg-white/5 border-white/20 text-white placeholder-white/30 rounded-lg text-xs h-9"
+                      />
+                      <Input
+                        placeholder="What needs to be done / proof required"
+                        value={m.description}
+                        onChange={e => updateMilestone(idx, 'description', e.target.value)}
+                        required
+                        className="bg-white/5 border-white/20 text-white placeholder-white/30 rounded-lg text-xs h-9"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          placeholder="%"
+                          value={m.fundingPercent}
+                          onChange={e => updateMilestone(idx, 'fundingPercent', parseInt(e.target.value) || 0)}
+                          required
+                          className="bg-white/5 border-white/20 text-white placeholder-white/30 rounded-lg text-xs h-9 w-20"
+                        />
+                        <span className="text-white/40 text-xs">% of total funding released at this milestone</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  <Button
+                    type="button"
+                    onClick={addMilestone}
+                    className="w-full bg-white/5 border border-white/20 text-white/60 hover:text-white hover:bg-white/10 rounded-xl text-xs h-9"
+                  >
+                    <PlusIcon className="w-3.5 h-3.5 mr-1" /> Add Milestone
+                  </Button>
                 </div>
 
                 {/* Transaction Cost Estimate */}

@@ -17,8 +17,10 @@ export interface BlockchainProposal {
   endTime: number;
   category: string;
   aiScore?: number;
+  aiReview?: any;
+  milestones?: any[];
   creationTime: number;
-  preservedBy?: string[]; // addresses for whom this proposal should be preserved
+  preservedBy?: string[];
 }
 
 export interface BlockchainStats {
