@@ -16,7 +16,6 @@ import {
   ArrowLeftIcon, SparklesIcon, CoinsIcon, ClockIcon,
   CheckCircleIcon, XCircleIcon, UsersIcon, UserIcon, ShieldIcon, SendIcon
 } from "lucide-react"
-import { MilestoneFunding } from "@/components/milestone-funding"
 
 const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET!
 const algodClient = new algosdk.Algodv2('', 'https://testnet-api.algonode.cloud', '')
@@ -197,15 +196,13 @@ export default function ProposalDetailPage() {
     if (draftMilestones.some(m => !m.title.trim())) { alert('Please fill in all milestone titles'); return }
     setSavingMilestones(true)
     try {
-      // Milestone 0 starts active, rest locked — sequential unlock
+      // Save with correct format: id, fundingPercent, status active/locked
       const milestones = draftMilestones.map((m, i) => ({
         id: i + 1,
         title: m.title,
         description: m.description,
         fundingPercent: m.percent,
         status: i === 0 ? 'active' : 'locked',
-        voteYes: 0,
-        voteNo: 0,
       }))
       await fetch('/api/proposals', {
         method: 'PATCH',
@@ -365,31 +362,43 @@ export default function ProposalDetailPage() {
                   </div>
                 )}
 
-                {/* ── MILESTONE FUNDING (sequential unlock) ── */}
+                {/* ── MILESTONE SECTION (only shown after proposal passes) ── */}
                 {proposal.status === 'passed' && (
-                  <>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-white font-semibold flex items-center gap-2">
+                        <CoinsIcon className="w-4 h-4 text-purple-400" />
+                        Funding Milestones
+                      </h2>
+                    </div>
+
                     {/* Proposer hasn't defined milestones yet */}
                     {!proposal.milestones && address === proposal.creator && !showMilestoneForm && (
                       <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 space-y-3">
                         <p className="text-yellow-300 text-sm font-medium">🎉 Your proposal was approved!</p>
-                        <p className="text-white/60 text-xs">Define 3 milestones. Each one unlocks only after the previous is completed and funds released.</p>
-                        <Button onClick={() => setShowMilestoneForm(true)} className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30 rounded-xl text-sm">
+                        <p className="text-white/60 text-xs">Now define how you'll use the funds across 3 milestones. The community will vote to release each tranche after you complete it.</p>
+                        <Button
+                          onClick={() => setShowMilestoneForm(true)}
+                          className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30 rounded-xl text-sm"
+                        >
                           📋 Define Milestones
                         </Button>
                       </div>
                     )}
 
+                    {/* Waiting message for non-proposer when milestones not defined */}
                     {!proposal.milestones && address !== proposal.creator && (
                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                         <p className="text-white/50 text-sm text-center">⏳ Waiting for proposer to define funding milestones...</p>
                       </div>
                     )}
 
-                    {/* Milestone definition form */}
+                    {/* Milestone definition form — only proposer, only once */}
                     {showMilestoneForm && (
                       <Card className="bg-white/5 border border-yellow-500/20 rounded-2xl">
                         <CardContent className="p-4 space-y-4">
                           <p className="text-white/70 text-xs">Split your ${proposal.fundingAmount.toLocaleString()} into 3 stages. Percentages must total 100%.</p>
+                          {/* Quick split buttons */}
                           <div className="flex gap-1 flex-wrap">
                             {[[33,34,33],[30,40,30],[25,50,25],[50,30,20]].map(vals => (
                               <button key={vals.join()} type="button"
@@ -404,21 +413,26 @@ export default function ProposalDetailPage() {
                               <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-3 space-y-2">
                                 <div className="flex items-center gap-2">
                                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                    i === 0 ? 'bg-blue-500/30 text-blue-300' : i === 1 ? 'bg-purple-500/30 text-purple-300' : 'bg-green-500/30 text-green-300'
+                                    i === 0 ? 'bg-blue-500/30 text-blue-300' :
+                                    i === 1 ? 'bg-purple-500/30 text-purple-300' :
+                                    'bg-green-500/30 text-green-300'
                                   }`}>{i+1}</span>
                                   <span className="text-white/60 text-xs">Stage {i+1} — {m.percent}% (${amt.toLocaleString()})</span>
-                                  <input type="number" min={1} max={98} value={m.percent}
+                                  <input type="number" min={1} max={98}
+                                    value={m.percent}
                                     onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, percent: Number(e.target.value)} : x))}
                                     className="ml-auto w-14 bg-white/10 border border-white/20 text-white text-xs rounded-lg px-2 py-1 text-center"
                                   />
                                   <span className="text-white/40 text-xs">%</span>
                                 </div>
-                                <input placeholder={['e.g. Purchase equipment & permits','e.g. Installation & setup complete','e.g. System operational, photos submitted'][i]}
+                                <input
+                                  placeholder={['e.g. Purchase equipment & permits','e.g. Installation & setup complete','e.g. System operational, photos submitted'][i]}
                                   value={m.title}
                                   onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, title: e.target.value} : x))}
                                   className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/30"
                                 />
-                                <textarea placeholder="What proof will you submit? (photos, invoices, reports...)"
+                                <textarea
+                                  placeholder="What proof will you submit? (photos, invoices, reports...)"
                                   value={m.description}
                                   onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, description: e.target.value} : x))}
                                   rows={2}
@@ -428,8 +442,12 @@ export default function ProposalDetailPage() {
                             )
                           })}
                           <div className="flex gap-2 pt-1">
-                            <Button variant="ghost" onClick={() => setShowMilestoneForm(false)} className="flex-1 text-white/50 hover:text-white border border-white/10 rounded-xl text-sm">Cancel</Button>
-                            <Button onClick={handleSaveMilestones} disabled={savingMilestones} className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm">
+                            <Button variant="ghost" onClick={() => setShowMilestoneForm(false)}
+                              className="flex-1 text-white/50 hover:text-white border border-white/10 rounded-xl text-sm">
+                              Cancel
+                            </Button>
+                            <Button onClick={handleSaveMilestones} disabled={savingMilestones}
+                              className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm">
                               {savingMilestones ? 'Saving...' : '✓ Submit Milestones'}
                             </Button>
                           </div>
@@ -437,15 +455,128 @@ export default function ProposalDetailPage() {
                       </Card>
                     )}
 
-                    {/* Sequential milestone funding — shown once milestones are defined */}
-                    {proposal.milestones && proposal.milestones.length > 0 && (
-                      <MilestoneFunding
-                        proposalId={proposal.id}
-                        proposalCreator={proposal.creator}
-                        totalFunding={proposal.fundingAmount}
-                      />
-                    )}
-                  </>
+                    {/* Milestone cards — shown once proposer has defined them */}
+                    {proposal.milestones && proposal.milestones.map((m: any, i: number) => {
+                      const pct = m.fundingPercent ?? m.percent ?? 0
+                      const amount = Math.round((proposal.fundingAmount * pct) / 100)
+                      const amountAlgo = parseFloat((proposal.fundingAmount * pct / 100).toFixed(4))
+                      const mTotal = (m.voteYes || 0) + (m.voteNo || 0)
+                      const mYesPct = mTotal > 0 ? Math.round((m.voteYes / mTotal) * 100) : 0
+                      const myVote = milestoneVoting[i]
+                      const isVoting = milestoneVotingId === i
+                      const isProposer = address === proposal.creator
+                      const isActive = m.status === 'active' || m.status === 'pending'
+                      const isLocked = m.status === 'locked'
+                      const isCompleted = m.status === 'completed'
+                      const isFailed = m.status === 'failed'
+                      const prevCompleted = i === 0 || ['completed'].includes(proposal.milestones[i - 1]?.status)
+                      const canVote = isActive && prevCompleted && !myVote && !isProposer && !!address
+                      const isReleased = releasedMilestones.includes(i)
+                      const isTreasury = address === TREASURY
+                      const canRelease = isCompleted && !isReleased && isTreasury
+
+                      return (
+                        <Card key={i} className={`border rounded-2xl ${
+                          isCompleted ? 'bg-green-500/5 border-green-500/20' :
+                          isFailed    ? 'bg-red-500/5 border-red-500/20' :
+                          isLocked    ? 'bg-white/3 border-white/5 opacity-60' :
+                          'bg-white/5 border-white/10'
+                        }`}>
+                          <CardContent className="p-4 space-y-2">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                  i === 0 ? 'bg-blue-500/30 text-blue-300' :
+                                  i === 1 ? 'bg-purple-500/30 text-purple-300' :
+                                  'bg-green-500/30 text-green-300'
+                                }`}>{i + 1}</span>
+                                <span className="text-white font-medium text-sm">{m.title}</span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-white/50 text-xs">${amount.toLocaleString()} ({m.percent}%)</span>
+                                <Badge className={`text-xs ${
+                                  isCompleted ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                                  isFailed    ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                                  isLocked    ? 'bg-white/5 text-white/30 border-white/10' :
+                                  'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                                }`}>
+                                  {isReleased ? '💸 Paid Out' : isCompleted ? '✅ Approved' : isFailed ? '✗ Rejected' : isLocked ? '🔒 Locked' : '⏳ Active'}
+                                </Badge>
+                              </div>
+                            </div>
+
+                            {m.description && <p className="text-white/50 text-xs pl-8">{m.description}</p>}
+
+                            {/* Vote bar — always visible once anyone has voted */}
+                            {mTotal > 0 && (
+                              <div className="pl-8 space-y-1">
+                                <div className="flex justify-between text-xs text-white/40">
+                                  <span>✓ {m.voteYes || 0} yes ({mYesPct}%)</span>
+                                  <span>✗ {m.voteNo || 0} no · needs 1</span>
+                                </div>
+                                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full transition-all ${
+                                    isCompleted ? 'bg-green-500' :
+                                    isFailed    ? 'bg-red-500' : 'bg-blue-500'
+                                  }`} style={{ width: `${mYesPct}%` }} />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Vote buttons — community only, once per wallet */}
+                            {canVote && (
+                              <div className="flex gap-2 pl-8 pt-1">
+                                <Button size="sm" onClick={() => handleMilestoneVote(i, 'for')} disabled={isVoting}
+                                  className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-xl h-8 text-xs">
+                                  {isVoting ? '...' : '✓ Approve Release'}
+                                </Button>
+                                <Button size="sm" onClick={() => handleMilestoneVote(i, 'against')} disabled={isVoting}
+                                  className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl h-8 text-xs">
+                                  {isVoting ? '...' : '✗ Reject'}
+                                </Button>
+                              </div>
+                            )}
+
+                            {/* Already voted — show what they voted */}
+                            {myVote && m.status === 'pending' && (
+                              <p className={`text-xs pl-8 ${
+                                myVote === 'for' ? 'text-green-400/70' : 'text-red-400/70'
+                              }`}>
+                                ✓ You voted {myVote === 'for' ? 'Approve' : 'Reject'} — waiting for more votes
+                              </p>
+                            )}
+
+                            {/* Locked — waiting for previous milestone */}
+                            {isLocked && (
+                              <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} is completed & funded</p>
+                            )}
+
+                            {/* Proposer view — waiting for votes */}
+                            {isActive && isProposer && (
+                              <p className="text-xs text-white/30 pl-8">⏳ Waiting for community to vote ({mTotal}/1 votes so far)</p>
+                            )}
+
+                            {/* Release funds button — proposer only, after community approves */}
+                            {canRelease && (
+                              <div className="pl-8 pt-1">
+                                <Button size="sm"
+                                  onClick={() => handleReleaseFunds(i, amountAlgo)}
+                                  disabled={releasingIdx === i}
+                                  className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
+                                  {releasingIdx === i ? '⏳ Sending...' : `💸 Release ${amountAlgo} ALGO`}
+                                </Button>
+                              </div>
+                            )}
+
+                            {/* Already released */}
+                            {isReleased && (
+                              <p className="text-xs text-purple-400/70 pl-8">💸 {amountAlgo} ALGO sent to proposer</p>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                  </div>
                 )}
 
                 {/* Description */}
