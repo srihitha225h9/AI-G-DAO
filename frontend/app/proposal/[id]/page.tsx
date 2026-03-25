@@ -58,9 +58,9 @@ export default function ProposalDetailPage() {
   }, [address, proposalId])
   const [showMilestoneForm, setShowMilestoneForm] = useState(false)
   const [draftMilestones, setDraftMilestones] = useState([
-    { title: '', description: '', percent: 33 },
-    { title: '', description: '', percent: 34 },
-    { title: '', description: '', percent: 33 },
+    { title: '', description: '', percent: 33, status: 'pending', voteYes: 0, voteNo: 0 },
+    { title: '', description: '', percent: 34, status: 'pending', voteYes: 0, voteNo: 0 },
+    { title: '', description: '', percent: 33, status: 'pending', voteYes: 0, voteNo: 0 },
   ])
   const [savingMilestones, setSavingMilestones] = useState(false)
 
@@ -68,24 +68,13 @@ export default function ProposalDetailPage() {
     if (reviewResult) setAiReview(reviewResult)
   }, [reviewResult])
 
-  // Poll every 10s so all wallets see milestone updates without manual refresh
-  useEffect(() => {
-    if (!proposalId) return
-    const poll = setInterval(async () => {
-      try {
-        const p = await getProposal(proposalId)
-        if (p) setProposal(p)
-      } catch {}
-    }, 10000)
-    return () => clearInterval(poll)
-  }, [proposalId])
-
   useEffect(() => {
     if (!proposalId) return
     const load = async () => {
       setLoading(true)
       try {
-        let p = await getProposal(proposalId)        if (p?.aiReview) {
+        let p = await getProposal(proposalId)
+        if (p?.aiReview) {
           setAiReview(p.aiReview)
         } else {
           try {
@@ -225,21 +214,18 @@ export default function ProposalDetailPage() {
 
   const handleSaveMilestones = async () => {
     if (!proposal) return
-    const emptyIdx = draftMilestones.findIndex(m => !m.title.trim())
-    if (emptyIdx !== -1) { alert(`Please fill in the title for Milestone ${emptyIdx + 1}`); return }
-    const totalPct = draftMilestones.reduce((s, m) => s + m.percent, 0)
-    if (totalPct !== 100) { alert(`Percentages must total 100% (currently ${totalPct}%)`); return }
+    const totalPercent = draftMilestones.reduce((s, m) => s + m.percent, 0)
+    if (totalPercent !== 100) { alert('Percentages must add up to 100%'); return }
+    if (draftMilestones.some(m => !m.title.trim())) { alert('Please fill in all milestone titles'); return }
     setSavingMilestones(true)
     try {
+      // Save with correct format: id, fundingPercent, status active/locked
       const milestones = draftMilestones.map((m, i) => ({
         id: i + 1,
         title: m.title,
         description: m.description,
         fundingPercent: m.percent,
-        percent: m.percent,
         status: i === 0 ? 'active' : 'locked',
-        voteYes: 0,
-        voteNo: 0,
       }))
       await fetch('/api/proposals', {
         method: 'PATCH',
@@ -247,7 +233,6 @@ export default function ProposalDetailPage() {
         body: JSON.stringify({ id: proposal.id, milestones }),
       })
       setProposal((prev: any) => ({ ...prev, milestones }))
-      setDraftMilestones([{ title: '', description: '', percent: 33 }, { title: '', description: '', percent: 34 }, { title: '', description: '', percent: 33 }])
       setShowMilestoneForm(false)
     } finally {
       setSavingMilestones(false)
@@ -261,8 +246,7 @@ export default function ProposalDetailPage() {
   const timeLeft = proposal ? Math.ceil((proposal.endTime - Date.now()) / (24 * 60 * 60 * 1000)) : 0
 
   return (
-    <WalletGuard requireBalance={0}>
-      <div className="relative flex flex-col min-h-[100dvh] text-white overflow-hidden">
+    <div className="relative flex flex-col min-h-[100dvh] text-white overflow-hidden">
         <div className="fixed inset-0 z-0">
           <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900" />
         </div>
@@ -424,6 +408,18 @@ export default function ProposalDetailPage() {
                       </div>
                     )}
 
+                    {/* Re-edit button if milestones saved but fundingPercent is broken */}
+                    {proposal.milestones && address === proposal.creator && !showMilestoneForm &&
+                      proposal.milestones.every((m: any) => !(m.fundingPercent ?? m.percent)) && (
+                      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-3 flex items-center justify-between gap-3">
+                        <p className="text-yellow-300 text-xs">⚠️ Milestone percentages need to be re-saved.</p>
+                        <Button size="sm" onClick={() => setShowMilestoneForm(true)}
+                          className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30 rounded-xl text-xs">
+                          Re-define
+                        </Button>
+                      </div>
+                    )}
+
                     {/* Waiting message for non-proposer when milestones not defined */}
                     {!proposal.milestones && address !== proposal.creator && (
                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
@@ -533,7 +529,7 @@ export default function ProposalDetailPage() {
                                 <span className="text-white font-medium text-sm">{m.title}</span>
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-white/50 text-xs">${amount.toLocaleString()} ({m.percent}%)</span>
+                                <span className="text-white/50 text-xs">${amount.toLocaleString()} ({pct}%)</span>
                                 <Badge className={`text-xs ${
                                   isReleased  ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
                                   isCompleted ? 'bg-green-500/20 text-green-400 border-green-500/30' :
@@ -714,6 +710,6 @@ export default function ProposalDetailPage() {
             </div>
           </div>
         )}
-      </WalletGuard>
+    </>
   )
 }
