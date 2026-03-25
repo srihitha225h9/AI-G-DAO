@@ -94,7 +94,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
 
   // Release funds from treasury — called automatically after all votes in
   const releaseFunds = useCallback(async (milestoneIdx: number, amountAlgo: number, updatedMilestones: any[]) => {
-    if (!isTreasury) return // only treasury wallet can sign
     try {
       const params = await algodClient.getTransactionParams().do()
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
@@ -190,12 +189,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     }
   }
 
-  // Manual release button — for treasury wallet if auto-release didn't fire
+  // Release funds — any wallet can trigger, but Pera will only sign if treasury is connected
   const handleManualRelease = async (milestoneIdx: number, amountAlgo: number) => {
-    if (!isTreasury) {
-      alert(`Connect the treasury wallet to release funds.\nTreasury: ${TREASURY?.slice(0, 8)}...${TREASURY?.slice(-6)}`)
-      return
-    }
     await releaseFunds(milestoneIdx, amountAlgo, milestones)
   }
 
@@ -319,16 +314,16 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                     <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} funds are released</p>
                   )}
 
-                  {/* Release button — visible to all, but only treasury wallet can sign */}
+                  {/* Release button — shown to proposer and treasury wallet */}
                   {isCompleted && !isReleased && (
-                    <div className="pl-8 pt-1 space-y-1">
-                      {isTreasury ? (
+                    <div className="pl-8 pt-1">
+                      {(isProposer || isTreasury) ? (
                         <Button size="sm" onClick={() => handleManualRelease(i, amountAlgo)}
                           className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
                           💸 Release {amountAlgo} ALGO to Proposer
                         </Button>
                       ) : (
-                        <p className="text-yellow-400/70 text-xs">⏳ Awaiting treasury wallet to release {amountAlgo} ALGO</p>
+                        <p className="text-yellow-400/70 text-xs">⏳ Awaiting funds release ({amountAlgo} ALGO)</p>
                       )}
                     </div>
                   )}
