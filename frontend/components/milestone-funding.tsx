@@ -22,7 +22,7 @@ interface MilestoneFundingProps {
 export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: MilestoneFundingProps) {
   const { address } = useWalletContext()
   const [milestones, setMilestones] = useState<any[]>([])
-  const [members, setMembers] = useState<string[]>([])
+  const [memberCount, setMemberCount] = useState(0)
   const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
   const [releasedMilestones, setReleasedMilestones] = useState<number[]>([])
   const [votingIdx, setVotingIdx] = useState<number | null>(null)
@@ -32,6 +32,9 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const [milestoneVotes, setMilestoneVotes] = useState<Record<number, "for" | "against">>({})
 
   const isProposer = address === proposalCreator
+  // Eligible voters = all members except proposer
+  // If memberCount unknown, threshold = 1 (at least 1 community member must vote)
+  const voteThreshold = memberCount > 1 ? memberCount - 1 : 1
 
   useEffect(() => {
     if (!address || !proposalId) return
@@ -74,8 +77,15 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
           setMilestones(ms)
         }
       }
-      if (mRes.ok) { const md = await mRes.json(); setMembers((md.members || []).map((m: any) => m.address)) }
-      if (tRes.ok) { const td = await tRes.json(); setTreasuryBalance(td.balanceAlgo); setReleasedMilestones(td.released || []) }
+      if (mRes.ok) {
+        const md = await mRes.json()
+        setMemberCount(md.count || (md.members || []).length || 0)
+      }
+      if (tRes.ok) {
+        const td = await tRes.json()
+        setTreasuryBalance(td.balanceAlgo)
+        setReleasedMilestones(td.released || [])
+      }
     } catch {}
     finally { setLoading(false) }
   }, [proposalId])
@@ -86,26 +96,39 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     return () => clearInterval(interval)
   }, [fetchData])
 
-  const eligibleVoters = members.filter(m => m !== proposalCreator)
-  const voteThreshold = eligibleVoters.length > 0 ? eligibleVoters.length : null
-
   const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
     if (!address || isProposer) return
     setVotingIdx(milestoneIdx)
     try {
-      const pRes = await fetch(`/api/proposals/${proposalId}`)
+      // Always fetch fresh member count + proposal data before voting
+      const [pRes, mRes] = await Promise.all([
+        fetch(`/api/proposals/${proposalId}`),
+        fetch("/api/members"),
+      ])
       const fresh = await pRes.json()
       const freshMilestones = fresh.milestones || []
+
+      // Get fresh threshold
+      let threshold = voteThreshold
+      if (mRes.ok) {
+        const md = await mRes.json()
+        const allMembers: string[] = (md.members || []).map((m: any) => m.address)
+        const eligible = allMembers.filter(a => a !== proposalCreator)
+        threshold = eligible.length > 0 ? eligible.length : 1
+      }
+
       const updated = freshMilestones.map((m: any, i: number) => {
         if (i !== milestoneIdx) return m
         const newYes = vote === "for" ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
         const newNo = vote === "against" ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
         const total = newYes + newNo
-        const threshold = voteThreshold ?? total
         const allVoted = total >= threshold
-        const newStatus = allVoted && newNo === 0 ? "completed" : allVoted && newNo > 0 ? "failed" : m.status
+        const newStatus = allVoted && newNo === 0 ? "completed"
+          : allVoted && newNo > 0 ? "failed"
+          : m.status
         return { ...m, voteYes: newYes, voteNo: newNo, status: newStatus }
       })
+
       await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -123,7 +146,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
     setReleasingIdx(milestoneIdx)
     try {
-      // Build txn from TREASURY → proposer
       const params = await algodClient.getTransactionParams().do()
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
         sender: TREASURY,
@@ -132,24 +154,20 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         suggestedParams: params,
         note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
       })
-
-      // Sign with treasury wallet via Pera — Pera will prompt treasury wallet to confirm
       const signedTxns = await peraWallet.signTransaction([[{ txn, signers: [TREASURY] }]])
       const sendRes = await algodClient.sendRawTransaction(signedTxns[0]).do()
       const txId = sendRes.txid || sendRes.txId || String(sendRes)
       await algosdk.waitForConfirmation(algodClient, txId, 10)
 
-      // Record in DB
       await fetch("/api/treasury", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proposalId, milestoneIdx, amountAlgo, txId }),
       })
 
-      // Update milestone statuses
       const pRes = await fetch(`/api/proposals/${proposalId}`)
-      const fresh = await pRes.json()
-      const finalMilestones = (fresh.milestones || []).map((m: any, i: number) => {
+      const freshP = await pRes.json()
+      const finalMilestones = (freshP.milestones || []).map((m: any, i: number) => {
         if (i === milestoneIdx) return { ...m, status: "released" }
         if (i === milestoneIdx + 1 && m.status === "locked") return { ...m, status: "active" }
         return m
@@ -220,7 +238,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
             const voteYes = m.voteYes || 0
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
-            const needed = voteThreshold ?? totalVotes
 
             return (
               <div key={i}>
@@ -260,11 +277,11 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                     <div className="pl-8 space-y-1">
                       <div className="flex justify-between text-xs text-white/40">
                         <span>✓ {voteYes} yes · ✗ {voteNo} no</span>
-                        <span>{totalVotes}/{needed} votes needed</span>
+                        <span>{totalVotes}/{voteThreshold} votes needed</span>
                       </div>
                       <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                         <div className="h-full bg-blue-500 rounded-full transition-all"
-                          style={{ width: `${needed > 0 ? (totalVotes / needed) * 100 : 0}%` }} />
+                          style={{ width: `${voteThreshold > 0 ? Math.min((totalVotes / voteThreshold) * 100, 100) : 0}%` }} />
                       </div>
                     </div>
                   )}
@@ -284,12 +301,12 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
 
                   {myVote && isActive && (
                     <p className={`text-xs pl-8 ${myVote === "for" ? "text-green-400/70" : "text-red-400/70"}`}>
-                      ✓ You voted {myVote === "for" ? "Approve" : "Reject"} — waiting for others ({totalVotes}/{needed})
+                      ✓ You voted {myVote === "for" ? "Approve" : "Reject"} — waiting for others ({totalVotes}/{voteThreshold})
                     </p>
                   )}
 
                   {isActive && isProposer && (
-                    <p className="text-xs text-white/30 pl-8">⏳ Waiting for community votes ({totalVotes}/{needed})</p>
+                    <p className="text-xs text-white/30 pl-8">⏳ Waiting for community votes ({totalVotes}/{voteThreshold})</p>
                   )}
 
                   {isLocked && (
