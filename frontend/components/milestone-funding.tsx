@@ -29,7 +29,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
   const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
   const [myVotes, setMyVotes] = useState<Record<number, "for" | "against">>({})
-  // Pera instance created once on client
+  const [proofInputs, setProofInputs] = useState<Record<number, string>>({})
+  const [submittingProof, setSubmittingProof] = useState<number | null>(null)
   const [pera] = useState(() => typeof window !== "undefined" ? new PeraWalletConnect() : null)
 
   const isProposer = address === proposalCreator
@@ -73,6 +74,33 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
 
   useEffect(() => { setMyVotes({}); fetchMyVotes() }, [address, fetchMyVotes])
 
+  // Proposer submits proof after completing milestone work
+  const handleSubmitProof = async (milestoneIdx: number) => {
+    const proof = proofInputs[milestoneIdx]?.trim()
+    if (!proof) return alert("Please describe your proof of completion.")
+    setSubmittingProof(milestoneIdx)
+    try {
+      const pRes = await fetch(`/api/proposals/${proposalId}`)
+      const fresh = await pRes.json()
+      const updated = (fresh.milestones || []).map((m: any, i: number) => {
+        if (i !== milestoneIdx) return m
+        return { ...m, status: "pending_proof", proof }
+      })
+      await fetch("/api/proposals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: proposalId, milestones: updated }),
+      })
+      setMilestones(updated)
+      setProofInputs(prev => ({ ...prev, [milestoneIdx]: "" }))
+    } catch (err: any) {
+      alert(`Failed: ${err.message}`)
+    } finally {
+      setSubmittingProof(null)
+    }
+  }
+
+  // Community votes to approve/reject proof
   const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
     if (!address || isProposer) return
     setVotingIdx(milestoneIdx)
@@ -109,7 +137,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
         body: JSON.stringify({ id: proposalId, milestones: updated }),
       })
       if (res.ok) { setMilestones(updated); setMyVotes(prev => ({ ...prev, [milestoneIdx]: vote })) }
-      else alert("Vote failed. Please try again.")
     } catch (err: any) {
       alert(`Vote failed: ${err.message}`)
     } finally {
@@ -117,24 +144,18 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     }
   }
 
+  // Proposer releases funds after community approves proof
   const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
     if (!pera) return
     setReleasingIdx(milestoneIdx)
     try {
-      // Connect treasury wallet in Pera if not already connected
       let accounts: string[] = []
-      try {
-        accounts = await pera.reconnectSession()
-      } catch {}
+      try { accounts = await pera.reconnectSession() } catch {}
+      if (!accounts.includes(TREASURY)) accounts = await pera.connect()
       if (!accounts.includes(TREASURY)) {
-        accounts = await pera.connect()
-      }
-      if (!accounts.includes(TREASURY)) {
-        alert(`Please import the treasury wallet into Pera.\n\nTreasury address:\n${TREASURY}`)
+        alert(`Please import the treasury wallet into Pera.\n\nTreasury: ${TREASURY}`)
         return
       }
-
-      // Build txn: treasury → proposer
       const params = await algodClient.getTransactionParams().do()
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
         sender: TREASURY,
@@ -143,21 +164,16 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
         suggestedParams: params,
         note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
       })
-
-      // Pera signs with treasury wallet
       const signedTxns = await pera.signTransaction([[{ txn, signers: [TREASURY] }]])
       const sendRes = await algodClient.sendRawTransaction(signedTxns[0]).do()
       const txId = sendRes.txid || sendRes.txId || String(sendRes)
       await algosdk.waitForConfirmation(algodClient, txId, 10)
 
-      // Record in DB
       await fetch("/api/treasury", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proposalId, milestoneIdx, amountAlgo, txId }),
       })
-
-      // Mark released, unlock next
       const pRes = await fetch(`/api/proposals/${proposalId}`)
       const freshP = await pRes.json()
       const finalMilestones = (freshP.milestones || []).map((m: any, i: number) => {
@@ -216,21 +232,38 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
             const isFailed = m.status === "failed"
             const isLocked = m.status === "locked"
             const isActive = m.status === "active" || m.status === "pending"
+            const isPendingProof = m.status === "pending_proof"
             const voteYes = m.voteYes || 0
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
             const myVote = myVotes[i]
-            const canVote = isActive && !isProposer && !myVote && !!address
+            // Community votes on proof — only when proof submitted
+            const canVote = isPendingProof && !isProposer && !myVote && !!address
+
+            const statusLabel = isReleased ? "💸 Released"
+              : isCompleted ? "✅ Approved"
+              : isFailed ? "✗ Rejected"
+              : isLocked ? "🔒 Locked"
+              : isPendingProof ? "📋 Proof Submitted"
+              : "⏳ Active"
+
+            const statusColor = isReleased ? "bg-purple-500/20 text-purple-400 border-purple-500/30"
+              : isCompleted ? "bg-green-500/20 text-green-400 border-green-500/30"
+              : isFailed ? "bg-red-500/20 text-red-400 border-red-500/30"
+              : isLocked ? "bg-white/5 text-white/30 border-white/10"
+              : isPendingProof ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+              : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+
+            const cardBg = isReleased ? "bg-purple-500/5 border-purple-500/20"
+              : isCompleted ? "bg-green-500/5 border-green-500/20"
+              : isFailed ? "bg-red-500/5 border-red-500/20"
+              : isLocked ? "bg-white/5 border-white/5 opacity-50"
+              : isPendingProof ? "bg-yellow-500/5 border-yellow-500/20"
+              : "bg-white/5 border-white/10"
 
             return (
               <div key={i}>
-                <div className={`rounded-2xl border p-4 space-y-2 transition-all ${
-                  isReleased  ? "bg-purple-500/5 border-purple-500/20" :
-                  isCompleted ? "bg-green-500/5 border-green-500/20" :
-                  isFailed    ? "bg-red-500/5 border-red-500/20" :
-                  isLocked    ? "bg-white/5 border-white/5 opacity-50" :
-                  "bg-white/5 border-white/10"
-                }`}>
+                <div className={`rounded-2xl border p-4 space-y-2 transition-all ${cardBg}`}>
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
@@ -242,72 +275,100 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="text-white/40 text-xs">{amountAlgo} ALGO ({pct}%)</span>
-                      <Badge className={`text-xs ${
-                        isReleased  ? "bg-purple-500/20 text-purple-400 border-purple-500/30" :
-                        isCompleted ? "bg-green-500/20 text-green-400 border-green-500/30" :
-                        isFailed    ? "bg-red-500/20 text-red-400 border-red-500/30" :
-                        isLocked    ? "bg-white/5 text-white/30 border-white/10" :
-                        "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                      }`}>
-                        {isReleased ? "💸 Released" : isCompleted ? "✅ Approved" : isFailed ? "✗ Rejected" : isLocked ? "🔒 Locked" : "⏳ Active"}
-                      </Badge>
+                      <Badge className={`text-xs ${statusColor}`}>{statusLabel}</Badge>
                     </div>
                   </div>
 
                   {m.description && <p className="text-white/50 text-xs pl-8">{m.description}</p>}
 
-                  {isActive && (
-                    <div className="pl-8 space-y-1">
-                      <div className="flex justify-between text-xs text-white/40">
-                        <span>✓ {voteYes} yes · ✗ {voteNo} no</span>
-                        <span>{totalVotes}/{voteThreshold} votes needed</span>
-                      </div>
-                      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full transition-all"
-                          style={{ width: `${voteThreshold > 0 ? Math.min((totalVotes / voteThreshold) * 100, 100) : 0}%` }} />
-                      </div>
-                    </div>
-                  )}
-
-                  {canVote && (
-                    <div className="flex gap-2 pl-8 pt-1">
-                      <Button size="sm" onClick={() => handleVote(i, "for")} disabled={votingIdx === i}
-                        className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-xl h-8 text-xs">
-                        {votingIdx === i ? "..." : "✓ Approve"}
-                      </Button>
-                      <Button size="sm" onClick={() => handleVote(i, "against")} disabled={votingIdx === i}
-                        className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl h-8 text-xs">
-                        {votingIdx === i ? "..." : "✗ Reject"}
-                      </Button>
-                    </div>
-                  )}
-
-                  {myVote && isActive && (
-                    <p className={`text-xs pl-8 ${myVote === "for" ? "text-green-400/70" : "text-red-400/70"}`}>
-                      ✓ You voted {myVote === "for" ? "Approve" : "Reject"} — waiting for others ({totalVotes}/{voteThreshold})
-                    </p>
-                  )}
-
+                  {/* STEP 1: Active — proposer completes work, then submits proof */}
                   {isActive && isProposer && (
-                    <p className="text-xs text-white/30 pl-8">⏳ Waiting for community votes ({totalVotes}/{voteThreshold})</p>
+                    <div className="pl-8 space-y-2 pt-1">
+                      <p className="text-blue-300 text-xs font-medium">📝 Complete this milestone then submit your proof:</p>
+                      <textarea
+                        placeholder="Describe what you completed (links, photos, invoices, reports...)"
+                        value={proofInputs[i] || ""}
+                        onChange={e => setProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
+                        rows={2}
+                        className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-white/30"
+                      />
+                      <Button size="sm" onClick={() => handleSubmitProof(i)} disabled={submittingProof === i}
+                        className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl h-8 text-xs px-4">
+                        {submittingProof === i ? "Submitting..." : "📤 Submit Proof"}
+                      </Button>
+                    </div>
+                  )}
+
+                  {isActive && !isProposer && (
+                    <p className="text-white/30 text-xs pl-8">⏳ Waiting for proposer to complete work and submit proof...</p>
+                  )}
+
+                  {/* STEP 2: Proof submitted — community votes to approve/reject */}
+                  {isPendingProof && (
+                    <div className="pl-8 space-y-2 pt-1">
+                      <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                        <p className="text-yellow-400 text-xs font-medium mb-1">📋 Proof submitted by proposer:</p>
+                        <p className="text-white/70 text-xs">{m.proof}</p>
+                      </div>
+                      {canVote && (
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => handleVote(i, "for")} disabled={votingIdx === i}
+                            className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-xl h-8 text-xs">
+                            {votingIdx === i ? "..." : "✓ Approve & Release"}
+                          </Button>
+                          <Button size="sm" onClick={() => handleVote(i, "against")} disabled={votingIdx === i}
+                            className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl h-8 text-xs">
+                            {votingIdx === i ? "..." : "✗ Reject"}
+                          </Button>
+                        </div>
+                      )}
+                      {myVote && (
+                        <p className={`text-xs ${myVote === "for" ? "text-green-400/70" : "text-red-400/70"}`}>
+                          ✓ You voted {myVote === "for" ? "Approve" : "Reject"} ({totalVotes}/{voteThreshold})
+                        </p>
+                      )}
+                      {isProposer && (
+                        <p className="text-yellow-400/70 text-xs">⏳ Waiting for community to review your proof ({totalVotes}/{voteThreshold})</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* STEP 3: Approved — proposer releases funds */}
+                  {isCompleted && !isReleased && (
+                    <div className="pl-8 pt-1 space-y-1">
+                      {isProposer ? (
+                        <>
+                          <Button size="sm" onClick={() => handleRelease(i, amountAlgo)} disabled={releasingIdx === i}
+                            className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
+                            {releasingIdx === i ? "⏳ Confirm in Pera..." : `💸 Release ${amountAlgo} ALGO`}
+                          </Button>
+                          <p className="text-white/30 text-xs">Treasury wallet will be prompted in Pera</p>
+                        </>
+                      ) : (
+                        <p className="text-yellow-400/70 text-xs">⏳ Awaiting proposer to release {amountAlgo} ALGO</p>
+                      )}
+                    </div>
+                  )}
+
+                  {isFailed && isProposer && (
+                    <div className="pl-8 space-y-2 pt-1">
+                      <p className="text-red-400/70 text-xs">✗ Proof rejected. Submit updated proof:</p>
+                      <textarea
+                        placeholder="Update your proof with more details..."
+                        value={proofInputs[i] || ""}
+                        onChange={e => setProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
+                        rows={2}
+                        className="w-full bg-white/5 border border-red-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none"
+                      />
+                      <Button size="sm" onClick={() => handleSubmitProof(i)} disabled={submittingProof === i}
+                        className="bg-red-600/50 hover:bg-red-600 text-white rounded-xl h-8 text-xs px-4">
+                        {submittingProof === i ? "Submitting..." : "📤 Resubmit Proof"}
+                      </Button>
+                    </div>
                   )}
 
                   {isLocked && (
                     <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} funds are released</p>
-                  )}
-
-                  {isCompleted && !isReleased && isProposer && (
-                    <div className="pl-8 pt-1 space-y-1">
-                      <Button size="sm" onClick={() => handleRelease(i, amountAlgo)} disabled={releasingIdx === i}
-                        className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
-                        {releasingIdx === i ? "⏳ Confirm in Pera..." : `💸 Release ${amountAlgo} ALGO`}
-                      </Button>
-                      <p className="text-white/30 text-xs">Treasury wallet will be prompted to sign in Pera</p>
-                    </div>
-                  )}
-
-                  {isCompleted && !isReleased && !isProposer && (
-                    <p className="text-yellow-400/70 text-xs pl-8">⏳ Awaiting proposer to release {amountAlgo} ALGO</p>
                   )}
 
                   {isReleased && (
@@ -343,15 +404,14 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
             {releaseModal.allDone ? (
               <>
                 <h2 className="text-white font-bold text-xl">All Funds Released!</h2>
-                <p className="text-white/60 text-sm">All {milestones.length} milestones completed. Full funding sent to proposer.</p>
+                <p className="text-white/60 text-sm">All {milestones.length} milestones completed.</p>
               </>
             ) : (
               <>
                 <h2 className="text-white font-bold text-xl">Milestone {releaseModal.idx + 1} Funded!</h2>
                 <p className="text-white/60 text-sm">
-                  <span className="text-purple-300 font-semibold">{releaseModal.amount} ALGO</span> released to proposer on-chain.
+                  <span className="text-purple-300 font-semibold">{releaseModal.amount} ALGO</span> released on-chain.
                 </p>
-                <p className="text-white/30 text-xs">{milestones.length - releasedMilestones.length} milestone(s) remaining</p>
               </>
             )}
             <p className="text-white/20 text-xs font-mono truncate">TX: {releaseModal.txId.slice(0, 24)}...</p>
