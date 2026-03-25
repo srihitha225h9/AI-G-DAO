@@ -15,23 +15,28 @@ interface MilestoneFundingProps {
   proposalId: number
   proposalCreator: string
   totalFunding: number
+  initialMilestones?: any[]
 }
 
-export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: MilestoneFundingProps) {
+export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, initialMilestones }: MilestoneFundingProps) {
   const { address, signTransaction } = useWalletContext()
-  const [milestones, setMilestones] = useState<any[]>([])
+  const [milestones, setMilestones] = useState<any[]>(initialMilestones || [])
   const [memberCount, setMemberCount] = useState(0)
   const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
   const [releasedMilestones, setReleasedMilestones] = useState<number[]>([])
   const [votingIdx, setVotingIdx] = useState<number | null>(null)
   const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
   const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
-  const [loading, setLoading] = useState(true)
   const [myVotes, setMyVotes] = useState<Record<number, "for" | "against">>({})
 
   const isProposer = address === proposalCreator
   const isTreasury = address === TREASURY
   const voteThreshold = memberCount > 1 ? memberCount - 1 : 1
+
+  // Update milestones when parent passes new data
+  useEffect(() => {
+    if (initialMilestones?.length) setMilestones(initialMilestones)
+  }, [initialMilestones])
 
   const fetchMyVotes = useCallback(async () => {
     if (!address || !proposalId) return
@@ -46,39 +51,14 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     } catch {}
   }, [address, proposalId])
 
-  const fetchData = useCallback(async () => {
+  // Background fetch — members + treasury only (milestones come from parent)
+  const fetchBackground = useCallback(async () => {
     try {
-      const [pRes, mRes, tRes] = await Promise.all([
-        fetch(`/api/proposals/${proposalId}`),
+      const [mRes, tRes, pRes] = await Promise.all([
         fetch("/api/members"),
         fetch(`/api/treasury?proposalId=${proposalId}`),
+        fetch(`/api/proposals/${proposalId}`),
       ])
-      if (pRes.ok) {
-        const p = await pRes.json()
-        const ms = p.milestones || []
-        let needsPatch = false
-        const fixed = ms.map((m: any, idx: number) => {
-          if ((m.status === "active" || m.status === "pending") && (m.voteYes || 0) > 0 && (m.voteNo || 0) === 0) {
-            const prevReleased = idx === 0 || ms[idx - 1]?.status === "released"
-            if (prevReleased) { needsPatch = true; return { ...m, status: "completed" } }
-          }
-          if (m.status === "completed" && idx > 0 && ms[idx - 1]?.status !== "released") {
-            needsPatch = true
-            return { ...m, status: "locked", voteYes: 0, voteNo: 0 }
-          }
-          return m
-        })
-        if (needsPatch) {
-          await fetch("/api/proposals", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: proposalId, milestones: fixed }),
-          })
-          setMilestones(fixed)
-        } else {
-          setMilestones(ms)
-        }
-      }
       if (mRes.ok) {
         const md = await mRes.json()
         setMemberCount(md.count || (md.members || []).length || 0)
@@ -88,16 +68,19 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         setTreasuryBalance(td.balanceAlgo)
         setReleasedMilestones(td.released || [])
       }
+      if (pRes.ok) {
+        const p = await pRes.json()
+        if (p.milestones?.length) setMilestones(p.milestones)
+      }
     } catch {}
-    finally { setLoading(false) }
   }, [proposalId])
 
   useEffect(() => {
-    fetchData()
     fetchMyVotes()
-    const interval = setInterval(() => { fetchData(); fetchMyVotes() }, 8000)
+    fetchBackground()
+    const interval = setInterval(() => { fetchBackground(); fetchMyVotes() }, 10000)
     return () => clearInterval(interval)
-  }, [fetchData, fetchMyVotes])
+  }, [fetchBackground, fetchMyVotes])
 
   useEffect(() => {
     setMyVotes({})
@@ -105,7 +88,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   }, [address, fetchMyVotes])
 
   const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
-    if (!address || isProposer) return
+    if (!address || isProposer || isTreasury) return
     setVotingIdx(milestoneIdx)
     try {
       const [pRes, mRes] = await Promise.all([
@@ -155,7 +138,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
     setReleasingIdx(milestoneIdx)
     try {
-      // Real on-chain txn — treasury wallet must be connected
       const params = await algodClient.getTransactionParams().do()
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
         sender: TREASURY,
@@ -168,7 +150,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       const sendRes = await algodClient.sendRawTransaction(signed).do()
       const txId = sendRes.txid || sendRes.txId || String(sendRes)
       await algosdk.waitForConfirmation(algodClient, txId, 10)
-
       await fetch("/api/treasury", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -201,14 +182,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       setReleasingIdx(null)
     }
   }
-
-  if (loading) return (
-    <Card className="bg-white/5 border-white/10 rounded-2xl">
-      <CardContent className="p-6 text-center">
-        <div className="w-6 h-6 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto" />
-      </CardContent>
-    </Card>
-  )
 
   if (!milestones.length) return null
 
@@ -321,16 +294,14 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                   )}
 
                   {isCompleted && !isReleased && (
-                    <div className="pl-8 pt-1 space-y-1">
+                    <div className="pl-8 pt-1">
                       {isTreasury ? (
                         <Button size="sm" onClick={() => handleRelease(i, amountAlgo)} disabled={releasingIdx === i}
                           className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
                           {releasingIdx === i ? "⏳ Confirm in Pera..." : `💸 Release ${amountAlgo} ALGO`}
                         </Button>
                       ) : (
-                        <p className="text-yellow-400/70 text-xs">
-                          ⏳ Connect treasury wallet to release {amountAlgo} ALGO
-                        </p>
+                        <p className="text-yellow-400/70 text-xs">⏳ Connect treasury wallet to release {amountAlgo} ALGO</p>
                       )}
                     </div>
                   )}
