@@ -7,11 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import { ChevronRightIcon, CoinsIcon } from "lucide-react"
 import { useWalletContext } from "@/hooks/use-wallet"
 import algosdk from "algosdk"
-import { PeraWalletConnect } from "@perawallet/connect"
 
 const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET!
 const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
-const peraWallet = new PeraWalletConnect()
 
 interface MilestoneFundingProps {
   proposalId: number
@@ -20,7 +18,7 @@ interface MilestoneFundingProps {
 }
 
 export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: MilestoneFundingProps) {
-  const { address } = useWalletContext()
+  const { address, signTransaction } = useWalletContext()
   const [milestones, setMilestones] = useState<any[]>([])
   const [memberCount, setMemberCount] = useState(0)
   const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
@@ -29,13 +27,11 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
   const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
-  // DB-backed: which milestones this wallet has voted on
   const [myVotes, setMyVotes] = useState<Record<number, "for" | "against">>({})
 
   const isProposer = address === proposalCreator
   const voteThreshold = memberCount > 1 ? memberCount - 1 : 1
 
-  // Fetch this wallet's milestone votes from DB
   const fetchMyVotes = useCallback(async () => {
     if (!address || !proposalId) return
     try {
@@ -43,9 +39,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       if (res.ok) {
         const data = await res.json()
         const map: Record<number, "for" | "against"> = {}
-        for (const row of data.votes || []) {
-          map[row.milestone_idx] = row.vote
-        }
+        for (const row of data.votes || []) map[row.milestone_idx] = row.vote
         setMyVotes(map)
       }
     } catch {}
@@ -104,7 +98,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     return () => clearInterval(interval)
   }, [fetchData, fetchMyVotes])
 
-  // Re-fetch my votes when wallet changes
   useEffect(() => {
     setMyVotes({})
     fetchMyVotes()
@@ -120,41 +113,31 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       ])
       const fresh = await pRes.json()
       const freshMilestones = fresh.milestones || []
-
       let threshold = voteThreshold
       if (mRes.ok) {
         const md = await mRes.json()
-        const allMembers: string[] = (md.members || []).map((m: any) => m.address)
-        const eligible = allMembers.filter(a => a !== proposalCreator)
+        const eligible = (md.members || []).map((m: any) => m.address).filter((a: string) => a !== proposalCreator)
         threshold = eligible.length > 0 ? eligible.length : 1
       }
-
       const updated = freshMilestones.map((m: any, i: number) => {
         if (i !== milestoneIdx) return m
         const newYes = vote === "for" ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
         const newNo = vote === "against" ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
         const total = newYes + newNo
         const allVoted = total >= threshold
-        const newStatus = allVoted && newNo === 0 ? "completed"
-          : allVoted && newNo > 0 ? "failed"
-          : m.status
+        const newStatus = allVoted && newNo === 0 ? "completed" : allVoted && newNo > 0 ? "failed" : m.status
         return { ...m, voteYes: newYes, voteNo: newNo, status: newStatus }
       })
-
-      // Save vote to DB first
       await fetch("/api/milestone-votes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proposalId, milestoneIdx, voterAddress: address, vote }),
       })
-
-      // Update milestone counts
       const res = await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: proposalId, milestones: updated }),
       })
-
       if (res.ok) {
         setMilestones(updated)
         setMyVotes(prev => ({ ...prev, [milestoneIdx]: vote }))
@@ -171,6 +154,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
     setReleasingIdx(milestoneIdx)
     try {
+      // Use the wallet context's signTransaction with TREASURY as signer
       const params = await algodClient.getTransactionParams().do()
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
         sender: TREASURY,
@@ -179,8 +163,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         suggestedParams: params,
         note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
       })
-      const signedTxns = await peraWallet.signTransaction([[{ txn, signers: [TREASURY] }]])
-      const sendRes = await algodClient.sendRawTransaction(signedTxns[0]).do()
+      const signed = await signTransaction(txn, TREASURY)
+      const sendRes = await algodClient.sendRawTransaction(signed).do()
       const txId = sendRes.txid || sendRes.txId || String(sendRes)
       await algosdk.waitForConfirmation(algodClient, txId, 10)
 
@@ -189,7 +173,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proposalId, milestoneIdx, amountAlgo, txId }),
       })
-
       const pRes = await fetch(`/api/proposals/${proposalId}`)
       const freshP = await pRes.json()
       const finalMilestones = (freshP.milestones || []).map((m: any, i: number) => {
@@ -207,8 +190,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       setReleasedMilestones(nextReleased)
       setTreasuryBalance(prev => prev !== null ? prev - amountAlgo : null)
       setReleaseModal({
-        idx: milestoneIdx,
-        amount: amountAlgo,
+        idx: milestoneIdx, amount: amountAlgo,
         txId: typeof txId === "string" ? txId : String(txId),
         allDone: nextReleased.length >= milestones.length,
       })
@@ -261,7 +243,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
             const myVote = myVotes[i]
-            // canVote: milestone active + not proposer + this wallet hasn't voted (per DB) + wallet connected
             const canVote = isActive && !isProposer && !myVote && !!address
 
             return (
