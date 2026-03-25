@@ -36,7 +36,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const isProposer = address === proposalCreator
   // All members except proposer must vote
   // Minimum 2 community members must vote — ensures at least 2 approvals needed
-  const requiredVotes = eligibleVoters.length > 1 ? eligibleVoters.length : 2
+  const requiredVotes = eligibleVoters.length > 0 ? eligibleVoters.length : 1
 
   useEffect(() => {
     if (initialMilestones?.length) setMilestones(initialMilestones)
