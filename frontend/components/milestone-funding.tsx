@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircleIcon, LockIcon, ClockIcon, XCircleIcon, ChevronRightIcon, CoinsIcon } from "lucide-react"
+import { ChevronRightIcon, CoinsIcon } from "lucide-react"
 import { useWalletContext } from "@/hooks/use-wallet"
 import algosdk from "algosdk"
 
@@ -24,14 +24,13 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
   const [releasedMilestones, setReleasedMilestones] = useState<number[]>([])
   const [votingIdx, setVotingIdx] = useState<number | null>(null)
-  const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
   const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [milestoneVotes, setMilestoneVotes] = useState<Record<number, "for" | "against">>({})
 
   const isProposer = address === proposalCreator
+  const isTreasury = address === TREASURY
 
-  // Load persisted votes for this wallet
   useEffect(() => {
     if (!address || !proposalId) return
     try {
@@ -42,25 +41,14 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
 
   const fetchData = useCallback(async () => {
     try {
-      // Fetch proposal milestones
-      const pRes = await fetch(`/api/proposals/${proposalId}`)
-      if (pRes.ok) {
-        const p = await pRes.json()
-        setMilestones(p.milestones || [])
-      }
-      // Fetch all DAO members
-      const mRes = await fetch("/api/members")
-      if (mRes.ok) {
-        const md = await mRes.json()
-        setMembers((md.members || []).map((m: any) => m.address))
-      }
-      // Fetch treasury balance + released milestones
-      const tRes = await fetch(`/api/treasury?proposalId=${proposalId}`)
-      if (tRes.ok) {
-        const td = await tRes.json()
-        setTreasuryBalance(td.balanceAlgo)
-        setReleasedMilestones(td.released || [])
-      }
+      const [pRes, mRes, tRes] = await Promise.all([
+        fetch(`/api/proposals/${proposalId}`),
+        fetch("/api/members"),
+        fetch(`/api/treasury?proposalId=${proposalId}`),
+      ])
+      if (pRes.ok) { const p = await pRes.json(); setMilestones(p.milestones || []) }
+      if (mRes.ok) { const md = await mRes.json(); setMembers((md.members || []).map((m: any) => m.address)) }
+      if (tRes.ok) { const td = await tRes.json(); setTreasuryBalance(td.balanceAlgo); setReleasedMilestones(td.released || []) }
     } catch {}
     finally { setLoading(false) }
   }, [proposalId])
@@ -71,49 +59,11 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     return () => clearInterval(interval)
   }, [fetchData])
 
-  // Community members eligible to vote = all members except proposer
   const eligibleVoters = members.filter(m => m !== proposalCreator)
 
-  const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
-    if (!address || isProposer) return
-    setVotingIdx(milestoneIdx)
-    try {
-      const pRes = await fetch(`/api/proposals/${proposalId}`)
-      const fresh = await pRes.json()
-      const freshMilestones = fresh.milestones || []
-      const updated = freshMilestones.map((m: any, i: number) => {
-        if (i !== milestoneIdx) return m
-        const newYes = vote === "for" ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
-        const newNo = vote === "against" ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
-        const total = newYes + newNo
-        // Status = completed only when ALL eligible voters have voted yes
-        const newStatus = total >= eligibleVoters.length && newYes === eligibleVoters.length
-          ? "completed"
-          : total >= eligibleVoters.length && newNo > 0
-          ? "failed"
-          : m.status
-        return { ...m, voteYes: newYes, voteNo: newNo, status: newStatus }
-      })
-      await fetch("/api/proposals", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: proposalId, milestones: updated }),
-      })
-      setMilestones(updated)
-      const newVotes = { ...milestoneVotes, [milestoneIdx]: vote }
-      setMilestoneVotes(newVotes)
-      localStorage.setItem(`milestone_votes_${proposalId}_${address}`, JSON.stringify(newVotes))
-    } finally {
-      setVotingIdx(null)
-    }
-  }
-
-  const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
-    if (address !== TREASURY) {
-      alert(`Connect the treasury wallet to release funds.\n\nTreasury: ${TREASURY?.slice(0,8)}...${TREASURY?.slice(-6)}`)
-      return
-    }
-    setReleasingIdx(milestoneIdx)
+  // Release funds from treasury — called automatically after all votes in
+  const releaseFunds = useCallback(async (milestoneIdx: number, amountAlgo: number, updatedMilestones: any[]) => {
+    if (!isTreasury) return // only treasury wallet can sign
     try {
       const params = await algodClient.getTransactionParams().do()
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
@@ -125,20 +75,17 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       })
       const signed = await signTransaction(txn)
       const sendRes = await algodClient.sendRawTransaction(signed).do()
-      const txId = sendRes.txid || sendRes.txId || sendRes
+      const txId = sendRes.txid || sendRes.txId || String(sendRes)
       await algosdk.waitForConfirmation(algodClient, txId, 10)
 
-      // Record in DB
       await fetch("/api/treasury", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proposalId, milestoneIdx, amountAlgo, txId }),
       })
 
-      // Mark milestone as released, unlock next
-      const pRes = await fetch(`/api/proposals/${proposalId}`)
-      const fresh = await pRes.json()
-      const updatedMilestones = (fresh.milestones || []).map((m: any, i: number) => {
+      // Mark released, unlock next milestone
+      const finalMilestones = updatedMilestones.map((m: any, i: number) => {
         if (i === milestoneIdx) return { ...m, status: "released" }
         if (i === milestoneIdx + 1 && m.status === "locked") return { ...m, status: "active" }
         return m
@@ -146,9 +93,9 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: proposalId, milestones: updatedMilestones }),
+        body: JSON.stringify({ id: proposalId, milestones: finalMilestones }),
       })
-      setMilestones(updatedMilestones)
+      setMilestones(finalMilestones)
 
       const nextReleased = [...releasedMilestones, milestoneIdx]
       setReleasedMilestones(nextReleased)
@@ -157,13 +104,65 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         idx: milestoneIdx,
         amount: amountAlgo,
         txId: typeof txId === "string" ? txId : String(txId),
-        allDone: nextReleased.length >= milestones.length,
+        allDone: nextReleased.length >= updatedMilestones.length,
       })
     } catch (err: any) {
       alert(`Release failed: ${err.message}`)
-    } finally {
-      setReleasingIdx(null)
     }
+  }, [isTreasury, proposalCreator, proposalId, releasedMilestones, signTransaction])
+
+  const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
+    if (!address || isProposer) return
+    setVotingIdx(milestoneIdx)
+    try {
+      const pRes = await fetch(`/api/proposals/${proposalId}`)
+      const fresh = await pRes.json()
+      const freshMilestones = fresh.milestones || []
+      const pct = freshMilestones[milestoneIdx]?.fundingPercent ?? freshMilestones[milestoneIdx]?.percent ?? 0
+      const amountAlgo = parseFloat((totalFunding * pct / 100).toFixed(4))
+
+      const updated = freshMilestones.map((m: any, i: number) => {
+        if (i !== milestoneIdx) return m
+        const newYes = vote === "for" ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
+        const newNo = vote === "against" ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
+        const total = newYes + newNo
+        const allVoted = total >= eligibleVoters.length
+        const newStatus = allVoted && newYes === eligibleVoters.length
+          ? "completed"
+          : allVoted && newNo > 0
+          ? "failed"
+          : m.status
+        return { ...m, voteYes: newYes, voteNo: newNo, status: newStatus }
+      })
+
+      await fetch("/api/proposals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: proposalId, milestones: updated }),
+      })
+      setMilestones(updated)
+
+      const newVotes = { ...milestoneVotes, [milestoneIdx]: vote }
+      setMilestoneVotes(newVotes)
+      localStorage.setItem(`milestone_votes_${proposalId}_${address}`, JSON.stringify(newVotes))
+
+      // Auto-release if this vote completed the milestone and treasury wallet is connected
+      const justCompleted = updated[milestoneIdx]?.status === "completed"
+      if (justCompleted && isTreasury) {
+        await releaseFunds(milestoneIdx, amountAlgo, updated)
+      }
+    } finally {
+      setVotingIdx(null)
+    }
+  }
+
+  // Manual release button — for treasury wallet if auto-release didn't fire
+  const handleManualRelease = async (milestoneIdx: number, amountAlgo: number) => {
+    if (!isTreasury) {
+      alert(`Connect the treasury wallet to release funds.\nTreasury: ${TREASURY?.slice(0, 8)}...${TREASURY?.slice(-6)}`)
+      return
+    }
+    await releaseFunds(milestoneIdx, amountAlgo, milestones)
   }
 
   if (loading) return (
@@ -176,7 +175,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
 
   if (!milestones.length) return null
 
-  const completedCount = milestones.filter(m => m.status === "released").length
+  const releasedCount = milestones.filter(m => m.status === "released").length
 
   return (
     <>
@@ -187,11 +186,11 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
               <CoinsIcon className="w-4 h-4 text-purple-400" />
               Funding Milestones
             </CardTitle>
-            <span className="text-white/40 text-xs">{completedCount}/{milestones.length} released</span>
+            <span className="text-white/40 text-xs">{releasedCount}/{milestones.length} released</span>
           </div>
           <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
             <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-700"
-              style={{ width: `${(completedCount / milestones.length) * 100}%` }} />
+              style={{ width: `${milestones.length > 0 ? (releasedCount / milestones.length) * 100 : 0}%` }} />
           </div>
         </CardHeader>
 
@@ -206,7 +205,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
             const isActive = m.status === "active" || m.status === "pending"
             const myVote = milestoneVotes[i]
             const canVote = isActive && !isProposer && !myVote && !!address
-            const canRelease = isCompleted && !isReleased && address === TREASURY
+            const canManualRelease = isCompleted && !isReleased && isTreasury
             const voteYes = m.voteYes || 0
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
@@ -246,7 +245,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
 
                   {m.description && <p className="text-white/50 text-xs pl-8">{m.description}</p>}
 
-                  {/* Vote progress */}
                   {isActive && (
                     <div className="pl-8 space-y-1">
                       <div className="flex justify-between text-xs text-white/40">
@@ -260,7 +258,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                     </div>
                   )}
 
-                  {/* Vote buttons — community only */}
                   {canVote && (
                     <div className="flex gap-2 pl-8 pt-1">
                       <Button size="sm" onClick={() => handleVote(i, "for")} disabled={votingIdx === i}
@@ -288,12 +285,12 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                     <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} funds are released</p>
                   )}
 
-                  {/* Release button — treasury wallet only */}
-                  {canRelease && (
+                  {/* Manual release — only shown to treasury wallet if auto-release didn't fire */}
+                  {canManualRelease && (
                     <div className="pl-8 pt-1">
-                      <Button size="sm" onClick={() => handleRelease(i, amountAlgo)} disabled={releasingIdx === i}
+                      <Button size="sm" onClick={() => handleManualRelease(i, amountAlgo)}
                         className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
-                        {releasingIdx === i ? "⏳ Sending..." : `💸 Release ${amountAlgo} ALGO to Proposer`}
+                        💸 Release {amountAlgo} ALGO to Proposer
                       </Button>
                     </div>
                   )}
@@ -321,7 +318,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         </CardContent>
       </Card>
 
-      {/* Release modal */}
       {releaseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setReleaseModal(null)} />
