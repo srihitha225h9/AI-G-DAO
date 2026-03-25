@@ -58,9 +58,9 @@ export default function ProposalDetailPage() {
   }, [address, proposalId])
   const [showMilestoneForm, setShowMilestoneForm] = useState(false)
   const [draftMilestones, setDraftMilestones] = useState([
-    { title: '', description: '', percent: 33, status: 'pending', voteYes: 0, voteNo: 0 },
-    { title: '', description: '', percent: 34, status: 'pending', voteYes: 0, voteNo: 0 },
-    { title: '', description: '', percent: 33, status: 'pending', voteYes: 0, voteNo: 0 },
+    { title: '', description: '', percent: 33 },
+    { title: '', description: '', percent: 34 },
+    { title: '', description: '', percent: 33 },
   ])
   const [savingMilestones, setSavingMilestones] = useState(false)
 
@@ -68,13 +68,24 @@ export default function ProposalDetailPage() {
     if (reviewResult) setAiReview(reviewResult)
   }, [reviewResult])
 
+  // Poll every 10s so all wallets see milestone updates without manual refresh
+  useEffect(() => {
+    if (!proposalId) return
+    const poll = setInterval(async () => {
+      try {
+        const p = await getProposal(proposalId)
+        if (p) setProposal(p)
+      } catch {}
+    }, 10000)
+    return () => clearInterval(poll)
+  }, [proposalId])
+
   useEffect(() => {
     if (!proposalId) return
     const load = async () => {
       setLoading(true)
       try {
-        let p = await getProposal(proposalId)
-        if (p?.aiReview) {
+        let p = await getProposal(proposalId)        if (p?.aiReview) {
           setAiReview(p.aiReview)
         } else {
           try {
@@ -214,18 +225,21 @@ export default function ProposalDetailPage() {
 
   const handleSaveMilestones = async () => {
     if (!proposal) return
-    const totalPercent = draftMilestones.reduce((s, m) => s + m.percent, 0)
-    if (totalPercent !== 100) { alert('Percentages must add up to 100%'); return }
-    if (draftMilestones.some(m => !m.title.trim())) { alert('Please fill in all milestone titles'); return }
+    const emptyIdx = draftMilestones.findIndex(m => !m.title.trim())
+    if (emptyIdx !== -1) { alert(`Please fill in the title for Milestone ${emptyIdx + 1}`); return }
+    const totalPct = draftMilestones.reduce((s, m) => s + m.percent, 0)
+    if (totalPct !== 100) { alert(`Percentages must total 100% (currently ${totalPct}%)`); return }
     setSavingMilestones(true)
     try {
-      // Save with correct format: id, fundingPercent, status active/locked
       const milestones = draftMilestones.map((m, i) => ({
         id: i + 1,
         title: m.title,
         description: m.description,
         fundingPercent: m.percent,
+        percent: m.percent,
         status: i === 0 ? 'active' : 'locked',
+        voteYes: 0,
+        voteNo: 0,
       }))
       await fetch('/api/proposals', {
         method: 'PATCH',
@@ -233,6 +247,7 @@ export default function ProposalDetailPage() {
         body: JSON.stringify({ id: proposal.id, milestones }),
       })
       setProposal((prev: any) => ({ ...prev, milestones }))
+      setDraftMilestones([{ title: '', description: '', percent: 33 }, { title: '', description: '', percent: 34 }, { title: '', description: '', percent: 33 }])
       setShowMilestoneForm(false)
     } finally {
       setSavingMilestones(false)
