@@ -51,10 +51,17 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         const ms = p.milestones || []
         // Fix stale milestones: if voteYes > 0 and voteNo = 0 and status is active, mark completed
         let needsPatch = false
-        const fixed = ms.map((m: any) => {
+        const fixed = ms.map((m: any, idx: number) => {
+          // Fix stale active milestones that have all yes votes — mark completed
           if ((m.status === 'active' || m.status === 'pending') && (m.voteYes || 0) > 0 && (m.voteNo || 0) === 0) {
+            // Only complete if previous milestone is released (or it's the first)
+            const prevReleased = idx === 0 || ms[idx - 1]?.status === 'released'
+            if (prevReleased) { needsPatch = true; return { ...m, status: 'completed' } }
+          }
+          // Fix milestone that is completed but previous not released — revert to locked
+          if (m.status === 'completed' && idx > 0 && ms[idx - 1]?.status !== 'released') {
             needsPatch = true
-            return { ...m, status: 'completed' }
+            return { ...m, status: 'locked', voteYes: 0, voteNo: 0 }
           }
           return m
         })
@@ -312,13 +319,17 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                     <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} funds are released</p>
                   )}
 
-                  {/* Manual release — only shown to treasury wallet if auto-release didn't fire */}
-                  {canManualRelease && (
-                    <div className="pl-8 pt-1">
-                      <Button size="sm" onClick={() => handleManualRelease(i, amountAlgo)}
-                        className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
-                        💸 Release {amountAlgo} ALGO to Proposer
-                      </Button>
+                  {/* Release button — visible to all, but only treasury wallet can sign */}
+                  {isCompleted && !isReleased && (
+                    <div className="pl-8 pt-1 space-y-1">
+                      {isTreasury ? (
+                        <Button size="sm" onClick={() => handleManualRelease(i, amountAlgo)}
+                          className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
+                          💸 Release {amountAlgo} ALGO to Proposer
+                        </Button>
+                      ) : (
+                        <p className="text-yellow-400/70 text-xs">⏳ Awaiting treasury wallet to release {amountAlgo} ALGO</p>
+                      )}
                     </div>
                   )}
 
