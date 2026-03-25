@@ -15,22 +15,27 @@ export async function GET(req: NextRequest) {
       headers: { 'X-Algo-API-Token': '' },
     })
     const data = await res.json()
-    const balanceAlgo = (data.amount || 0) / 1_000_000
+    const liveBalance = (data.amount || 0) / 1_000_000
+
+    // Fetch all releases from DB to subtract from live balance
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS milestone_releases (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        proposal_id bigint NOT NULL,
+        milestone_idx integer NOT NULL,
+        amount_algo numeric NOT NULL,
+        tx_id text NOT NULL,
+        released_at timestamptz DEFAULT now(),
+        UNIQUE(proposal_id, milestone_idx)
+      )
+    `)
+    const allReleases = await pool.query('SELECT COALESCE(SUM(amount_algo),0) as total FROM milestone_releases')
+    const totalReleased = parseFloat(allReleases.rows[0].total || '0')
+    const balanceAlgo = Math.max(0, liveBalance - totalReleased)
 
     // Fetch released milestones for this proposal from DB
     let released: number[] = []
     if (proposalId) {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS milestone_releases (
-          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-          proposal_id bigint NOT NULL,
-          milestone_idx integer NOT NULL,
-          amount_algo numeric NOT NULL,
-          tx_id text NOT NULL,
-          released_at timestamptz DEFAULT now(),
-          UNIQUE(proposal_id, milestone_idx)
-        )
-      `)
       const { rows } = await pool.query(
         'SELECT milestone_idx FROM milestone_releases WHERE proposal_id = $1',
         [proposalId]
