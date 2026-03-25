@@ -103,6 +103,12 @@ export default function ProposalDetailPage() {
           }
         }
         setProposal(p)
+        // Auto-pass proposal if 2+ yes votes
+        if (p && p.status === 'active' && p.voteYes >= 2 && p.voteYes > p.voteNo) {
+          await fetch('/api/proposals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id, status: 'passed' }) })
+          p = { ...p, status: 'passed' }
+          setProposal(p)
+        }
         // Load treasury balance + released milestones
         try {
           const t = await fetch(`/api/treasury?proposalId=${proposalId}`)
@@ -312,13 +318,13 @@ export default function ProposalDetailPage() {
                       />
                     </div>
                     <p className="text-xs text-white/40 text-center">
-                      {totalVotes} vote{totalVotes !== 1 ? 's' : ''} · needs 3 to decide
+                      {totalVotes} vote{totalVotes !== 1 ? 's' : ''} · needs 2 to decide
                     </p>
                   </CardContent>
                 </Card>
 
                 {/* Passed banner */}
-                {proposal.status === 'passed' && (
+                {(proposal.status === 'passed' || (proposal.voteYes >= 2 && proposal.voteYes > proposal.voteNo)) && (
                   <div className="bg-green-500/10 border border-green-500/30 rounded-2xl px-4 py-3 flex items-center gap-3">
                     <CoinsIcon className="w-5 h-5 text-green-400 shrink-0" />
                     <div>
@@ -351,7 +357,7 @@ export default function ProposalDetailPage() {
                 )}
 
                 {/* Treasury balance */}
-                {proposal.status === 'passed' && treasuryBalance !== null && (
+                {(proposal.status === 'passed' || (proposal.voteYes >= 2 && proposal.voteYes > proposal.voteNo)) && treasuryBalance !== null && (
                   <div className="bg-purple-500/10 border border-purple-500/30 rounded-2xl px-4 py-3 flex items-center gap-3">
                     <CoinsIcon className="w-5 h-5 text-purple-400 shrink-0" />
                     <div className="flex-1">
@@ -366,7 +372,7 @@ export default function ProposalDetailPage() {
                 )}
 
                 {/* ── MILESTONE FUNDING (sequential unlock) ── */}
-                {proposal.status === 'passed' && (
+                {(proposal.status === 'passed' || (proposal.voteYes >= 2 && proposal.voteYes > proposal.voteNo)) && (
                   <>
                     {/* Proposer hasn't defined milestones yet */}
                     {!proposal.milestones && address === proposal.creator && !showMilestoneForm && (
@@ -443,6 +449,7 @@ export default function ProposalDetailPage() {
                         proposalId={proposal.id}
                         proposalCreator={proposal.creator}
                         totalFunding={proposal.fundingAmount}
+                        initialMilestones={proposal.milestones}
                       />
                     )}
                   </>
