@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronRightIcon, CoinsIcon } from "lucide-react"
 import { useWalletContext } from "@/hooks/use-wallet"
+import algosdk from "algosdk"
+import { PeraWalletConnect } from "@perawallet/connect"
+
+const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET!
+const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
 
 interface MilestoneFundingProps {
   proposalId: number
@@ -22,8 +27,10 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [releasedMilestones, setReleasedMilestones] = useState<number[]>([])
   const [votingIdx, setVotingIdx] = useState<number | null>(null)
   const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
-  const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; allDone: boolean } | null>(null)
+  const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
   const [myVotes, setMyVotes] = useState<Record<number, "for" | "against">>({})
+  // Pera instance created once on client
+  const [pera] = useState(() => typeof window !== "undefined" ? new PeraWalletConnect() : null)
 
   const isProposer = address === proposalCreator
   const voteThreshold = memberCount > 1 ? memberCount - 1 : 1
@@ -52,25 +59,14 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
         fetch(`/api/treasury?proposalId=${proposalId}`),
         fetch(`/api/proposals/${proposalId}`),
       ])
-      if (mRes.ok) {
-        const md = await mRes.json()
-        setMemberCount(md.count || (md.members || []).length || 0)
-      }
-      if (tRes.ok) {
-        const td = await tRes.json()
-        setTreasuryBalance(td.balanceAlgo)
-        setReleasedMilestones(td.released || [])
-      }
-      if (pRes.ok) {
-        const p = await pRes.json()
-        if (p.milestones?.length) setMilestones(p.milestones)
-      }
+      if (mRes.ok) { const md = await mRes.json(); setMemberCount(md.count || (md.members || []).length || 0) }
+      if (tRes.ok) { const td = await tRes.json(); setTreasuryBalance(td.balanceAlgo); setReleasedMilestones(td.released || []) }
+      if (pRes.ok) { const p = await pRes.json(); if (p.milestones?.length) setMilestones(p.milestones) }
     } catch {}
   }, [proposalId])
 
   useEffect(() => {
-    fetchMyVotes()
-    fetchBackground()
+    fetchMyVotes(); fetchBackground()
     const interval = setInterval(() => { fetchBackground(); fetchMyVotes() }, 10000)
     return () => clearInterval(interval)
   }, [fetchBackground, fetchMyVotes])
@@ -112,10 +108,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: proposalId, milestones: updated }),
       })
-      if (res.ok) {
-        setMilestones(updated)
-        setMyVotes(prev => ({ ...prev, [milestoneIdx]: vote }))
-      }
+      if (res.ok) { setMilestones(updated); setMyVotes(prev => ({ ...prev, [milestoneIdx]: vote })) }
+      else alert("Vote failed. Please try again.")
     } catch (err: any) {
       alert(`Vote failed: ${err.message}`)
     } finally {
@@ -123,16 +117,47 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     }
   }
 
-  // Proposer clicks release — records in DB, unlocks next milestone
   const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
+    if (!pera) return
     setReleasingIdx(milestoneIdx)
     try {
-      const txId = `release_${proposalId}_m${milestoneIdx}_${Date.now()}`
+      // Connect treasury wallet in Pera if not already connected
+      let accounts: string[] = []
+      try {
+        accounts = await pera.reconnectSession()
+      } catch {}
+      if (!accounts.includes(TREASURY)) {
+        accounts = await pera.connect()
+      }
+      if (!accounts.includes(TREASURY)) {
+        alert(`Please import the treasury wallet into Pera.\n\nTreasury address:\n${TREASURY}`)
+        return
+      }
+
+      // Build txn: treasury → proposer
+      const params = await algodClient.getTransactionParams().do()
+      const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        sender: TREASURY,
+        receiver: proposalCreator,
+        amount: Math.round(amountAlgo * 1_000_000),
+        suggestedParams: params,
+        note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
+      })
+
+      // Pera signs with treasury wallet
+      const signedTxns = await pera.signTransaction([[{ txn, signers: [TREASURY] }]])
+      const sendRes = await algodClient.sendRawTransaction(signedTxns[0]).do()
+      const txId = sendRes.txid || sendRes.txId || String(sendRes)
+      await algosdk.waitForConfirmation(algodClient, txId, 10)
+
+      // Record in DB
       await fetch("/api/treasury", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proposalId, milestoneIdx, amountAlgo, txId }),
       })
+
+      // Mark released, unlock next
       const pRes = await fetch(`/api/proposals/${proposalId}`)
       const freshP = await pRes.json()
       const finalMilestones = (freshP.milestones || []).map((m: any, i: number) => {
@@ -149,7 +174,11 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       const nextReleased = [...releasedMilestones, milestoneIdx]
       setReleasedMilestones(nextReleased)
       setTreasuryBalance(prev => prev !== null ? prev - amountAlgo : null)
-      setReleaseModal({ idx: milestoneIdx, amount: amountAlgo, allDone: nextReleased.length >= milestones.length })
+      setReleaseModal({
+        idx: milestoneIdx, amount: amountAlgo,
+        txId: typeof txId === "string" ? txId : String(txId),
+        allDone: nextReleased.length >= milestones.length,
+      })
     } catch (err: any) {
       alert(`Release failed: ${err.message}`)
     } finally {
@@ -267,13 +296,13 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                     <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} funds are released</p>
                   )}
 
-                  {/* Proposer sees Release button after community approves */}
                   {isCompleted && !isReleased && isProposer && (
-                    <div className="pl-8 pt-1">
+                    <div className="pl-8 pt-1 space-y-1">
                       <Button size="sm" onClick={() => handleRelease(i, amountAlgo)} disabled={releasingIdx === i}
                         className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
-                        {releasingIdx === i ? "⏳ Releasing..." : `💸 Release ${amountAlgo} ALGO`}
+                        {releasingIdx === i ? "⏳ Confirm in Pera..." : `💸 Release ${amountAlgo} ALGO`}
                       </Button>
+                      <p className="text-white/30 text-xs">Treasury wallet will be prompted to sign in Pera</p>
                     </div>
                   )}
 
@@ -320,11 +349,12 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
               <>
                 <h2 className="text-white font-bold text-xl">Milestone {releaseModal.idx + 1} Funded!</h2>
                 <p className="text-white/60 text-sm">
-                  <span className="text-purple-300 font-semibold">{releaseModal.amount} ALGO</span> released to proposer.
+                  <span className="text-purple-300 font-semibold">{releaseModal.amount} ALGO</span> released to proposer on-chain.
                 </p>
                 <p className="text-white/30 text-xs">{milestones.length - releasedMilestones.length} milestone(s) remaining</p>
               </>
             )}
+            <p className="text-white/20 text-xs font-mono truncate">TX: {releaseModal.txId.slice(0, 24)}...</p>
             <Button onClick={() => setReleaseModal(null)} className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-xl">
               {releaseModal.allDone ? "🎉 Done" : "Continue"}
             </Button>
