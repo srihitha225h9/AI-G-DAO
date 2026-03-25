@@ -29,7 +29,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
   const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
-  // Track which milestones this wallet has voted on — keyed by milestone index
   const [votedMilestones, setVotedMilestones] = useState<Record<number, "for" | "against">>({})
 
   const isProposer = address === proposalCreator
@@ -87,14 +86,33 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     return () => clearInterval(interval)
   }, [fetchData])
 
-  // Load voted milestones from localStorage — but only use as UI hint, not as gate
+  // Auto-clear stale localStorage votes when DB shows 0 votes (milestone was reset)
   useEffect(() => {
-    if (!address || !proposalId) return
+    if (!address || !proposalId || !milestones.length) return
     try {
-      const stored = localStorage.getItem(`milestone_votes_${proposalId}_${address}`)
-      if (stored) setVotedMilestones(JSON.parse(stored))
+      const key = `milestone_votes_${proposalId}_${address}`
+      const stored = localStorage.getItem(key)
+      if (!stored) return
+      const saved = JSON.parse(stored) as Record<string, string>
+      const cleaned: Record<number, "for" | "against"> = {}
+      let changed = false
+      Object.entries(saved).forEach(([idx, vote]) => {
+        const m = milestones[Number(idx)]
+        // If DB shows 0 votes for this milestone, the vote was reset — clear it
+        if (m && (m.voteYes || 0) === 0 && (m.voteNo || 0) === 0) {
+          changed = true
+        } else if (m) {
+          cleaned[Number(idx)] = vote as "for" | "against"
+        }
+      })
+      if (changed) {
+        localStorage.setItem(key, JSON.stringify(cleaned))
+        setVotedMilestones(cleaned)
+      } else {
+        setVotedMilestones(saved as Record<number, "for" | "against">)
+      }
     } catch {}
-  }, [address, proposalId])
+  }, [address, proposalId, milestones])
 
   const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
     if (!address || isProposer) return
@@ -241,10 +259,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
             const voteYes = m.voteYes || 0
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
-            // Use DB vote count to determine if this wallet already voted
-            // A wallet has voted if totalVotes >= 1 and they have a localStorage entry
             const myVote = votedMilestones[i]
-            // Show vote buttons if: milestone active, not proposer, not yet voted (per localStorage), wallet connected
             const canVote = isActive && !isProposer && !myVote && !!address
 
             return (
