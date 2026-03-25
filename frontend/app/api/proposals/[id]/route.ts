@@ -7,7 +7,7 @@ const pool = new Pool({
 
 function formatProposalRow(row: any) {
   return {
-    id: row.id,
+    id: Number(row.id),
     title: row.title,
     description: row.description,
     creator: row.creator,
@@ -15,10 +15,12 @@ function formatProposalRow(row: any) {
     voteYes: Number(row.vote_yes),
     voteNo: Number(row.vote_no),
     status: row.status,
-    endTime: new Date(row.end_time).getTime(),
+    endTime: Number(row.end_time),
     category: row.category,
     aiScore: row.ai_score !== null ? Number(row.ai_score) : undefined,
-    creationTime: new Date(row.creation_time).getTime(),
+    aiReview: row.ai_review || null,
+    milestones: row.milestones || null,
+    creationTime: Number(row.creation_time),
   };
 }
 
