@@ -4,29 +4,12 @@ import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  CheckCircleIcon,
-  LockIcon,
-  ClockIcon,
-  XCircleIcon,
-  ChevronRightIcon,
-  CoinsIcon,
-  FileTextIcon,
-  AlertCircleIcon,
-} from "lucide-react"
+import { CheckCircleIcon, LockIcon, ClockIcon, XCircleIcon, ChevronRightIcon, CoinsIcon } from "lucide-react"
 import { useWalletContext } from "@/hooks/use-wallet"
+import algosdk from "algosdk"
 
-export interface Milestone {
-  id: number
-  title: string
-  description: string
-  fundingPercent: number
-  status: "locked" | "active" | "pending_release" | "completed" | "failed"
-  completedAt?: number
-  txId?: string
-  evidence?: string
-}
+const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET!
+const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
 
 interface MilestoneFundingProps {
   proposalId: number
@@ -34,334 +17,339 @@ interface MilestoneFundingProps {
   totalFunding: number
 }
 
-const STATUS_CONFIG = {
-  locked: {
-    icon: LockIcon,
-    color: "text-white/40",
-    bg: "bg-white/5",
-    border: "border-white/10",
-    badge: "bg-white/10 text-white/40",
-    label: "Locked",
-  },
-  active: {
-    icon: AlertCircleIcon,
-    color: "text-blue-400",
-    bg: "bg-blue-500/10",
-    border: "border-blue-500/30",
-    badge: "bg-blue-500/20 text-blue-400",
-    label: "Active — Submit Evidence",
-  },
-  pending_release: {
-    icon: ClockIcon,
-    color: "text-yellow-400",
-    bg: "bg-yellow-500/10",
-    border: "border-yellow-500/30",
-    badge: "bg-yellow-500/20 text-yellow-400",
-    label: "Pending DAO Approval",
-  },
-  completed: {
-    icon: CheckCircleIcon,
-    color: "text-green-400",
-    bg: "bg-green-500/10",
-    border: "border-green-500/30",
-    badge: "bg-green-500/20 text-green-400",
-    label: "Completed & Funded",
-  },
-  failed: {
-    icon: XCircleIcon,
-    color: "text-red-400",
-    bg: "bg-red-500/10",
-    border: "border-red-500/30",
-    badge: "bg-red-500/20 text-red-400",
-    label: "Rejected — Resubmit",
-  },
-}
-
 export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: MilestoneFundingProps) {
-  const { address } = useWalletContext()
-  const [milestones, setMilestones] = useState<Milestone[]>([])
+  const { address, signTransaction } = useWalletContext()
+  const [milestones, setMilestones] = useState<any[]>([])
+  const [members, setMembers] = useState<string[]>([])
+  const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
+  const [releasedMilestones, setReleasedMilestones] = useState<number[]>([])
+  const [votingIdx, setVotingIdx] = useState<number | null>(null)
+  const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
+  const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState<number | null>(null)
-  const [evidenceInputs, setEvidenceInputs] = useState<Record<number, string>>({})
-  const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null)
+  const [milestoneVotes, setMilestoneVotes] = useState<Record<number, "for" | "against">>({})
 
-  const isCreator = address === proposalCreator
+  const isProposer = address === proposalCreator
 
-  const fetchMilestones = useCallback(async () => {
+  // Load persisted votes for this wallet
+  useEffect(() => {
+    if (!address || !proposalId) return
     try {
-      const res = await fetch(`/api/milestones?proposalId=${proposalId}`)
-      const data = await res.json()
-      setMilestones(data.milestones || [])
-    } catch {
-      setMilestones([])
-    } finally {
-      setLoading(false)
-    }
+      const stored = localStorage.getItem(`milestone_votes_${proposalId}_${address}`)
+      if (stored) setMilestoneVotes(JSON.parse(stored))
+    } catch {}
+  }, [address, proposalId])
+
+  const fetchData = useCallback(async () => {
+    try {
+      // Fetch proposal milestones
+      const pRes = await fetch(`/api/proposals/${proposalId}`)
+      if (pRes.ok) {
+        const p = await pRes.json()
+        setMilestones(p.milestones || [])
+      }
+      // Fetch all DAO members
+      const mRes = await fetch("/api/members")
+      if (mRes.ok) {
+        const md = await mRes.json()
+        setMembers((md.members || []).map((m: any) => m.address))
+      }
+      // Fetch treasury balance + released milestones
+      const tRes = await fetch(`/api/treasury?proposalId=${proposalId}`)
+      if (tRes.ok) {
+        const td = await tRes.json()
+        setTreasuryBalance(td.balanceAlgo)
+        setReleasedMilestones(td.released || [])
+      }
+    } catch {}
+    finally { setLoading(false) }
   }, [proposalId])
 
   useEffect(() => {
-    fetchMilestones()
-  }, [fetchMilestones])
+    fetchData()
+    const interval = setInterval(fetchData, 8000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
-  const notify = (msg: string, type: "success" | "error") => {
-    setNotification({ msg, type })
-    setTimeout(() => setNotification(null), 4000)
-  }
+  // Community members eligible to vote = all members except proposer
+  const eligibleVoters = members.filter(m => m !== proposalCreator)
 
-  // Creator submits evidence for the active milestone
-  const handleSubmitEvidence = async (milestoneId: number) => {
-    const evidence = evidenceInputs[milestoneId]?.trim()
-    if (!evidence) return notify("Please describe the evidence of completion.", "error")
-
-    setActionLoading(milestoneId)
+  const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
+    if (!address || isProposer) return
+    setVotingIdx(milestoneIdx)
     try {
-      const res = await fetch("/api/milestones", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proposalId, milestoneId, evidence, callerAddress: address }),
+      const pRes = await fetch(`/api/proposals/${proposalId}`)
+      const fresh = await pRes.json()
+      const freshMilestones = fresh.milestones || []
+      const updated = freshMilestones.map((m: any, i: number) => {
+        if (i !== milestoneIdx) return m
+        const newYes = vote === "for" ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
+        const newNo = vote === "against" ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
+        const total = newYes + newNo
+        // Status = completed only when ALL eligible voters have voted yes
+        const newStatus = total >= eligibleVoters.length && newYes === eligibleVoters.length
+          ? "completed"
+          : total >= eligibleVoters.length && newNo > 0
+          ? "failed"
+          : m.status
+        return { ...m, voteYes: newYes, voteNo: newNo, status: newStatus }
       })
-      const data = await res.json()
-      if (!res.ok) return notify(data.error || "Failed to submit evidence", "error")
-      setMilestones(data.milestones)
-      setEvidenceInputs(prev => ({ ...prev, [milestoneId]: "" }))
-      notify("Evidence submitted! Waiting for DAO approval.", "success")
-    } catch {
-      notify("Network error. Please try again.", "error")
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  // DAO member approves or rejects a pending milestone
-  const handleAction = async (milestoneId: number, action: "approve" | "reject") => {
-    setActionLoading(milestoneId)
-    try {
-      const res = await fetch("/api/milestones", {
+      await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proposalId, milestoneId, action, callerAddress: address }),
+        body: JSON.stringify({ id: proposalId, milestones: updated }),
       })
-      const data = await res.json()
-      if (!res.ok) return notify(data.error || "Action failed", "error")
-      setMilestones(data.milestones)
-      if (action === "approve") {
-        notify(`Milestone approved! Funds released. TxID: ${data.txId?.slice(0, 20)}...`, "success")
-      } else {
-        notify("Milestone rejected. Creator can resubmit evidence.", "error")
-      }
-    } catch {
-      notify("Network error. Please try again.", "error")
+      setMilestones(updated)
+      const newVotes = { ...milestoneVotes, [milestoneIdx]: vote }
+      setMilestoneVotes(newVotes)
+      localStorage.setItem(`milestone_votes_${proposalId}_${address}`, JSON.stringify(newVotes))
     } finally {
-      setActionLoading(null)
+      setVotingIdx(null)
     }
   }
 
-  const completedFunding = milestones
-    .filter(m => m.status === "completed")
-    .reduce((sum, m) => sum + (totalFunding * m.fundingPercent) / 100, 0)
+  const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
+    if (address !== TREASURY) {
+      alert(`Connect the treasury wallet to release funds.\n\nTreasury: ${TREASURY?.slice(0,8)}...${TREASURY?.slice(-6)}`)
+      return
+    }
+    setReleasingIdx(milestoneIdx)
+    try {
+      const params = await algodClient.getTransactionParams().do()
+      const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        sender: TREASURY,
+        receiver: proposalCreator,
+        amount: Math.round(amountAlgo * 1_000_000),
+        suggestedParams: params,
+        note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
+      })
+      const signed = await signTransaction(txn)
+      const sendRes = await algodClient.sendRawTransaction(signed).do()
+      const txId = sendRes.txid || sendRes.txId || sendRes
+      await algosdk.waitForConfirmation(algodClient, txId, 10)
 
-  const totalPercent = milestones.reduce((sum, m) => sum + m.fundingPercent, 0)
+      // Record in DB
+      await fetch("/api/treasury", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposalId, milestoneIdx, amountAlgo, txId }),
+      })
 
-  if (loading) {
-    return (
-      <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl">
-        <CardContent className="p-6">
-          <div className="animate-pulse space-y-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-16 bg-white/5 rounded-xl" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    )
+      // Mark milestone as released, unlock next
+      const pRes = await fetch(`/api/proposals/${proposalId}`)
+      const fresh = await pRes.json()
+      const updatedMilestones = (fresh.milestones || []).map((m: any, i: number) => {
+        if (i === milestoneIdx) return { ...m, status: "released" }
+        if (i === milestoneIdx + 1 && m.status === "locked") return { ...m, status: "active" }
+        return m
+      })
+      await fetch("/api/proposals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: proposalId, milestones: updatedMilestones }),
+      })
+      setMilestones(updatedMilestones)
+
+      const nextReleased = [...releasedMilestones, milestoneIdx]
+      setReleasedMilestones(nextReleased)
+      setTreasuryBalance(prev => prev !== null ? prev - amountAlgo : null)
+      setReleaseModal({
+        idx: milestoneIdx,
+        amount: amountAlgo,
+        txId: typeof txId === "string" ? txId : String(txId),
+        allDone: nextReleased.length >= milestones.length,
+      })
+    } catch (err: any) {
+      alert(`Release failed: ${err.message}`)
+    } finally {
+      setReleasingIdx(null)
+    }
   }
 
-  if (milestones.length === 0) {
-    return (
-      <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl">
-        <CardContent className="p-6 text-center text-white/40">
-          <CoinsIcon className="w-10 h-10 mx-auto mb-2 opacity-30" />
-          <p>No milestones defined for this proposal.</p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-3xl">
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-white text-lg flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-emerald-500 rounded-2xl flex items-center justify-center">
-              <CoinsIcon className="w-5 h-5 text-white" />
-            </div>
-            Milestone Funding
-          </CardTitle>
-          <div className="text-right">
-            <p className="text-white font-bold">${completedFunding.toLocaleString()} released</p>
-            <p className="text-white/50 text-xs">of ${totalFunding.toLocaleString()} total</p>
-          </div>
-        </div>
-
-        {/* Progress bar across all milestones */}
-        <div className="mt-3 h-2 bg-white/10 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all duration-700 rounded-full"
-            style={{
-              width: `${milestones.filter(m => m.status === "completed").length / milestones.length * 100}%`,
-            }}
-          />
-        </div>
-        <p className="text-white/40 text-xs mt-1">
-          {milestones.filter(m => m.status === "completed").length} of {milestones.length} milestones completed
-        </p>
-      </CardHeader>
-
-      <CardContent className="space-y-3 pb-6">
-        {/* Notification */}
-        {notification && (
-          <div className={`px-4 py-3 rounded-xl text-sm font-medium ${
-            notification.type === "success"
-              ? "bg-green-500/20 text-green-400 border border-green-500/30"
-              : "bg-red-500/20 text-red-400 border border-red-500/30"
-          }`}>
-            {notification.msg}
-          </div>
-        )}
-
-        {milestones.map((milestone, idx) => {
-          const cfg = STATUS_CONFIG[milestone.status]
-          const Icon = cfg.icon
-          const fundingForThis = (totalFunding * milestone.fundingPercent) / 100
-          const isLast = idx === milestones.length - 1
-
-          return (
-            <div key={milestone.id}>
-              <div className={`rounded-2xl border p-4 transition-all duration-300 ${cfg.bg} ${cfg.border}`}>
-                {/* Milestone header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className={`mt-0.5 shrink-0 ${cfg.color}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-white font-medium text-sm">
-                          Milestone {idx + 1}: {milestone.title}
-                        </span>
-                        <Badge className={`text-xs px-2 py-0.5 ${cfg.badge}`}>
-                          {cfg.label}
-                        </Badge>
-                      </div>
-                      <p className="text-white/50 text-xs mt-1">{milestone.description}</p>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-white font-semibold text-sm">${fundingForThis.toLocaleString()}</p>
-                    <p className="text-white/40 text-xs">{milestone.fundingPercent}%</p>
-                  </div>
-                </div>
-
-                {/* Completed: show txId */}
-                {milestone.status === "completed" && milestone.txId && (
-                  <div className="mt-3 px-3 py-2 bg-green-500/10 rounded-xl border border-green-500/20">
-                    <p className="text-green-400 text-xs font-medium">Funds Released</p>
-                    <p className="text-white/50 text-xs font-mono mt-0.5 truncate">TxID: {milestone.txId}</p>
-                    {milestone.completedAt && (
-                      <p className="text-white/30 text-xs mt-0.5">
-                        {new Date(milestone.completedAt).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Pending: show evidence + approve/reject for DAO members */}
-                {milestone.status === "pending_release" && (
-                  <div className="mt-3 space-y-3">
-                    {milestone.evidence && (
-                      <div className="px-3 py-2 bg-yellow-500/10 rounded-xl border border-yellow-500/20">
-                        <p className="text-yellow-400 text-xs font-medium flex items-center gap-1">
-                          <FileTextIcon className="w-3 h-3" /> Evidence Submitted
-                        </p>
-                        <p className="text-white/70 text-xs mt-1">{milestone.evidence}</p>
-                      </div>
-                    )}
-                    {/* Any connected wallet (DAO member) can approve/reject */}
-                    {address && !isCreator && (
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-xl text-xs h-9"
-                          onClick={() => handleAction(milestone.id, "approve")}
-                          disabled={actionLoading === milestone.id}
-                        >
-                          {actionLoading === milestone.id ? "Processing..." : "✓ Approve & Release Funds"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl text-xs h-9"
-                          onClick={() => handleAction(milestone.id, "reject")}
-                          disabled={actionLoading === milestone.id}
-                        >
-                          ✗ Reject
-                        </Button>
-                      </div>
-                    )}
-                    {isCreator && (
-                      <p className="text-yellow-400/70 text-xs text-center">
-                        Waiting for DAO members to review your evidence...
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Active: creator submits evidence */}
-                {milestone.status === "active" && isCreator && (
-                  <div className="mt-3 space-y-2">
-                    <Textarea
-                      placeholder="Describe how you completed this milestone (links, metrics, proof)..."
-                      value={evidenceInputs[milestone.id] || ""}
-                      onChange={e => setEvidenceInputs(prev => ({ ...prev, [milestone.id]: e.target.value }))}
-                      rows={2}
-                      className="bg-white/5 border-white/20 text-white placeholder-white/30 text-xs rounded-xl resize-none"
-                    />
-                    <Button
-                      size="sm"
-                      className="w-full bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 rounded-xl text-xs h-9"
-                      onClick={() => handleSubmitEvidence(milestone.id)}
-                      disabled={actionLoading === milestone.id}
-                    >
-                      {actionLoading === milestone.id ? "Submitting..." : "Submit Evidence for Review"}
-                    </Button>
-                  </div>
-                )}
-
-                {milestone.status === "active" && !isCreator && (
-                  <p className="text-blue-400/70 text-xs mt-2">
-                    Waiting for project creator to submit completion evidence...
-                  </p>
-                )}
-              </div>
-
-              {/* Arrow connector between milestones */}
-              {!isLast && (
-                <div className="flex justify-center my-1">
-                  <ChevronRightIcon className="w-4 h-4 text-white/20 rotate-90" />
-                </div>
-              )}
-            </div>
-          )
-        })}
-
-        {/* Summary */}
-        <div className="mt-2 px-4 py-3 bg-white/5 rounded-2xl border border-white/10">
-          <div className="flex justify-between text-xs text-white/50">
-            <span>Total milestones: {milestones.length}</span>
-            <span>Funding %: {totalPercent}%</span>
-            <span>Released: ${completedFunding.toLocaleString()}</span>
-          </div>
-        </div>
+  if (loading) return (
+    <Card className="bg-white/5 border-white/10 rounded-2xl">
+      <CardContent className="p-6 text-center">
+        <div className="w-6 h-6 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto" />
       </CardContent>
     </Card>
+  )
+
+  if (!milestones.length) return null
+
+  const completedCount = milestones.filter(m => m.status === "released").length
+
+  return (
+    <>
+      <Card className="bg-white/5 border-white/10 rounded-2xl">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-white text-sm flex items-center gap-2">
+              <CoinsIcon className="w-4 h-4 text-purple-400" />
+              Funding Milestones
+            </CardTitle>
+            <span className="text-white/40 text-xs">{completedCount}/{milestones.length} released</span>
+          </div>
+          <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
+            <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-700"
+              style={{ width: `${(completedCount / milestones.length) * 100}%` }} />
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-3 pb-5">
+          {milestones.map((m: any, i: number) => {
+            const pct = m.fundingPercent ?? m.percent ?? 0
+            const amountAlgo = parseFloat((totalFunding * pct / 100).toFixed(4))
+            const isReleased = m.status === "released" || releasedMilestones.includes(i)
+            const isCompleted = m.status === "completed"
+            const isFailed = m.status === "failed"
+            const isLocked = m.status === "locked"
+            const isActive = m.status === "active" || m.status === "pending"
+            const myVote = milestoneVotes[i]
+            const canVote = isActive && !isProposer && !myVote && !!address
+            const canRelease = isCompleted && !isReleased && address === TREASURY
+            const voteYes = m.voteYes || 0
+            const voteNo = m.voteNo || 0
+            const totalVotes = voteYes + voteNo
+            const needed = eligibleVoters.length
+
+            return (
+              <div key={i}>
+                <div className={`rounded-2xl border p-4 space-y-2 transition-all ${
+                  isReleased  ? "bg-purple-500/5 border-purple-500/20" :
+                  isCompleted ? "bg-green-500/5 border-green-500/20" :
+                  isFailed    ? "bg-red-500/5 border-red-500/20" :
+                  isLocked    ? "bg-white/3 border-white/5 opacity-50" :
+                  "bg-white/5 border-white/10"
+                }`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        i === 0 ? "bg-blue-500/30 text-blue-300" :
+                        i === 1 ? "bg-purple-500/30 text-purple-300" :
+                        "bg-green-500/30 text-green-300"
+                      }`}>{i + 1}</span>
+                      <span className="text-white font-medium text-sm">{m.title}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-white/40 text-xs">{amountAlgo} ALGO ({pct}%)</span>
+                      <Badge className={`text-xs ${
+                        isReleased  ? "bg-purple-500/20 text-purple-400 border-purple-500/30" :
+                        isCompleted ? "bg-green-500/20 text-green-400 border-green-500/30" :
+                        isFailed    ? "bg-red-500/20 text-red-400 border-red-500/30" :
+                        isLocked    ? "bg-white/5 text-white/30 border-white/10" :
+                        "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                      }`}>
+                        {isReleased ? "💸 Released" : isCompleted ? "✅ Approved" : isFailed ? "✗ Rejected" : isLocked ? "🔒 Locked" : "⏳ Active"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {m.description && <p className="text-white/50 text-xs pl-8">{m.description}</p>}
+
+                  {/* Vote progress */}
+                  {isActive && (
+                    <div className="pl-8 space-y-1">
+                      <div className="flex justify-between text-xs text-white/40">
+                        <span>✓ {voteYes} yes · ✗ {voteNo} no</span>
+                        <span>{totalVotes}/{needed} votes needed</span>
+                      </div>
+                      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full transition-all"
+                          style={{ width: `${needed > 0 ? (totalVotes / needed) * 100 : 0}%` }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Vote buttons — community only */}
+                  {canVote && (
+                    <div className="flex gap-2 pl-8 pt-1">
+                      <Button size="sm" onClick={() => handleVote(i, "for")} disabled={votingIdx === i}
+                        className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-xl h-8 text-xs">
+                        {votingIdx === i ? "..." : "✓ Approve"}
+                      </Button>
+                      <Button size="sm" onClick={() => handleVote(i, "against")} disabled={votingIdx === i}
+                        className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl h-8 text-xs">
+                        {votingIdx === i ? "..." : "✗ Reject"}
+                      </Button>
+                    </div>
+                  )}
+
+                  {myVote && isActive && (
+                    <p className={`text-xs pl-8 ${myVote === "for" ? "text-green-400/70" : "text-red-400/70"}`}>
+                      ✓ You voted {myVote === "for" ? "Approve" : "Reject"} — waiting for others ({totalVotes}/{needed})
+                    </p>
+                  )}
+
+                  {isActive && isProposer && (
+                    <p className="text-xs text-white/30 pl-8">⏳ Waiting for community votes ({totalVotes}/{needed})</p>
+                  )}
+
+                  {isLocked && (
+                    <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} funds are released</p>
+                  )}
+
+                  {/* Release button — treasury wallet only */}
+                  {canRelease && (
+                    <div className="pl-8 pt-1">
+                      <Button size="sm" onClick={() => handleRelease(i, amountAlgo)} disabled={releasingIdx === i}
+                        className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
+                        {releasingIdx === i ? "⏳ Sending..." : `💸 Release ${amountAlgo} ALGO to Proposer`}
+                      </Button>
+                    </div>
+                  )}
+
+                  {isReleased && (
+                    <p className="text-xs text-purple-400/70 pl-8">💸 {amountAlgo} ALGO sent to proposer</p>
+                  )}
+                </div>
+
+                {i < milestones.length - 1 && (
+                  <div className="flex justify-center my-1">
+                    <ChevronRightIcon className="w-4 h-4 text-white/20 rotate-90" />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {treasuryBalance !== null && (
+            <div className="flex justify-between text-xs text-white/40 px-1 pt-1 border-t border-white/5">
+              <span>Treasury balance</span>
+              <span className="text-purple-300 font-medium">{treasuryBalance.toFixed(2)} ALGO</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Release modal */}
+      {releaseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setReleaseModal(null)} />
+          <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4">
+            <div className="w-16 h-16 mx-auto rounded-full flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg">
+              <span className="text-3xl">{releaseModal.allDone ? "🎉" : "💸"}</span>
+            </div>
+            {releaseModal.allDone ? (
+              <>
+                <h2 className="text-white font-bold text-xl">All Funds Released!</h2>
+                <p className="text-white/60 text-sm">All {milestones.length} milestones completed. Full funding sent to proposer.</p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-white font-bold text-xl">Milestone {releaseModal.idx + 1} Funded!</h2>
+                <p className="text-white/60 text-sm">
+                  <span className="text-purple-300 font-semibold">{releaseModal.amount} ALGO</span> released to proposer.
+                </p>
+                <p className="text-white/30 text-xs">{milestones.length - releasedMilestones.length} milestone(s) remaining</p>
+              </>
+            )}
+            <p className="text-white/20 text-xs font-mono truncate">TX: {releaseModal.txId.slice(0, 24)}...</p>
+            <Button onClick={() => setReleaseModal(null)} className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-xl">
+              {releaseModal.allDone ? "🎉 Done" : "Continue"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
