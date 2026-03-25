@@ -395,7 +395,7 @@ export default function ProposalDetailPage() {
                     {showMilestoneForm && (
                       <Card className="bg-white/5 border border-yellow-500/20 rounded-2xl">
                         <CardContent className="p-4 space-y-4">
-                          <p className="text-white/70 text-xs">Split your ${proposal.fundingAmount.toLocaleString()} into 3 stages. Percentages must total 100%.</p>
+                          <p className="text-white/70 text-xs">Split your ${proposal.fundingAmount.toLocaleString()} into 3 stages. Describe what will be done in each stage.</p>
                           <div className="flex gap-1 flex-wrap">
                             {[[33,34,33],[30,40,30],[25,50,25],[50,30,20]].map(vals => (
                               <button key={vals.join()} type="button"
@@ -419,12 +419,12 @@ export default function ProposalDetailPage() {
                                   />
                                   <span className="text-white/40 text-xs">%</span>
                                 </div>
-                                <input placeholder={['e.g. Purchase equipment & permits','e.g. Installation & setup complete','e.g. System operational, photos submitted'][i]}
+                                <input placeholder={['e.g. Purchase equipment & permits','e.g. Installation & setup complete','e.g. System operational & tested'][i]}
                                   value={m.title}
                                   onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, title: e.target.value} : x))}
                                   className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/30"
                                 />
-                                <textarea placeholder="What proof will you submit? (photos, invoices, reports...)"
+                                <textarea placeholder={['What will be accomplished in this phase?','What will be accomplished in this phase?','What will be accomplished in this phase?'][i]}
                                   value={m.description}
                                   onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, description: e.target.value} : x))}
                                   rows={2}
