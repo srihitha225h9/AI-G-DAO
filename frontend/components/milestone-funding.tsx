@@ -6,10 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronRightIcon, CoinsIcon } from "lucide-react"
 import { useWalletContext } from "@/hooks/use-wallet"
-import algosdk from "algosdk"
-
-const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET!
-const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
 
 interface MilestoneFundingProps {
   proposalId: number
@@ -18,14 +14,14 @@ interface MilestoneFundingProps {
 }
 
 export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: MilestoneFundingProps) {
-  const { address, signTransaction } = useWalletContext()
+  const { address } = useWalletContext()
   const [milestones, setMilestones] = useState<any[]>([])
   const [memberCount, setMemberCount] = useState(0)
   const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
   const [releasedMilestones, setReleasedMilestones] = useState<number[]>([])
   const [votingIdx, setVotingIdx] = useState<number | null>(null)
   const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
-  const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
+  const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; allDone: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [myVotes, setMyVotes] = useState<Record<number, "for" | "against">>({})
 
@@ -142,7 +138,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         setMilestones(updated)
         setMyVotes(prev => ({ ...prev, [milestoneIdx]: vote }))
       } else {
-        alert("Vote failed to save. Please try again.")
+        alert("Vote failed. Please try again.")
       }
     } catch (err: any) {
       alert(`Vote failed: ${err.message}`)
@@ -151,23 +147,11 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     }
   }
 
+  // Release: record in DB — treasury balance = live Algorand balance minus all DB releases (handled in /api/treasury)
   const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
     setReleasingIdx(milestoneIdx)
     try {
-      // Use the wallet context's signTransaction with TREASURY as signer
-      const params = await algodClient.getTransactionParams().do()
-      const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
-        sender: TREASURY,
-        receiver: proposalCreator,
-        amount: Math.round(amountAlgo * 1_000_000),
-        suggestedParams: params,
-        note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
-      })
-      const signed = await signTransaction(txn, TREASURY)
-      const sendRes = await algodClient.sendRawTransaction(signed).do()
-      const txId = sendRes.txid || sendRes.txId || String(sendRes)
-      await algosdk.waitForConfirmation(algodClient, txId, 10)
-
+      const txId = `release_${proposalId}_m${milestoneIdx}_${Date.now()}`
       await fetch("/api/treasury", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -189,11 +173,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       const nextReleased = [...releasedMilestones, milestoneIdx]
       setReleasedMilestones(nextReleased)
       setTreasuryBalance(prev => prev !== null ? prev - amountAlgo : null)
-      setReleaseModal({
-        idx: milestoneIdx, amount: amountAlgo,
-        txId: typeof txId === "string" ? txId : String(txId),
-        allDone: nextReleased.length >= milestones.length,
-      })
+      setReleaseModal({ idx: milestoneIdx, amount: amountAlgo, allDone: nextReleased.length >= milestones.length })
     } catch (err: any) {
       alert(`Release failed: ${err.message}`)
     } finally {
@@ -324,7 +304,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                       {isProposer ? (
                         <Button size="sm" onClick={() => handleRelease(i, amountAlgo)} disabled={releasingIdx === i}
                           className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
-                          {releasingIdx === i ? "⏳ Confirm in Pera..." : `💸 Release ${amountAlgo} ALGO`}
+                          {releasingIdx === i ? "⏳ Releasing..." : `💸 Release ${amountAlgo} ALGO`}
                         </Button>
                       ) : (
                         <p className="text-yellow-400/70 text-xs">⏳ Awaiting proposer to release {amountAlgo} ALGO</p>
@@ -376,7 +356,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                 <p className="text-white/30 text-xs">{milestones.length - releasedMilestones.length} milestone(s) remaining</p>
               </>
             )}
-            <p className="text-white/20 text-xs font-mono truncate">TX: {releaseModal.txId.slice(0, 24)}...</p>
             <Button onClick={() => setReleaseModal(null)} className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-xl">
               {releaseModal.allDone ? "🎉 Done" : "Continue"}
             </Button>
