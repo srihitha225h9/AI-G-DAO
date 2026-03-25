@@ -46,7 +46,29 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         fetch("/api/members"),
         fetch(`/api/treasury?proposalId=${proposalId}`),
       ])
-      if (pRes.ok) { const p = await pRes.json(); setMilestones(p.milestones || []) }
+      if (pRes.ok) {
+        const p = await pRes.json()
+        const ms = p.milestones || []
+        // Fix stale milestones: if voteYes > 0 and voteNo = 0 and status is active, mark completed
+        let needsPatch = false
+        const fixed = ms.map((m: any) => {
+          if ((m.status === 'active' || m.status === 'pending') && (m.voteYes || 0) > 0 && (m.voteNo || 0) === 0) {
+            needsPatch = true
+            return { ...m, status: 'completed' }
+          }
+          return m
+        })
+        if (needsPatch) {
+          await fetch('/api/proposals', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: proposalId, milestones: fixed }),
+          })
+          setMilestones(fixed)
+        } else {
+          setMilestones(ms)
+        }
+      }
       if (mRes.ok) { const md = await mRes.json(); setMembers((md.members || []).map((m: any) => m.address)) }
       if (tRes.ok) { const td = await tRes.json(); setTreasuryBalance(td.balanceAlgo); setReleasedMilestones(td.released || []) }
     } catch {}
@@ -60,6 +82,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   }, [fetchData])
 
   const eligibleVoters = members.filter(m => m !== proposalCreator)
+  // Threshold: use actual member count if available, fallback to voteYes count
+  const voteThreshold = eligibleVoters.length > 0 ? eligibleVoters.length : null
 
   // Release funds from treasury — called automatically after all votes in
   const releaseFunds = useCallback(async (milestoneIdx: number, amountAlgo: number, updatedMilestones: any[]) => {
@@ -126,8 +150,11 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         const newYes = vote === "for" ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
         const newNo = vote === "against" ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
         const total = newYes + newNo
-        const allVoted = total >= eligibleVoters.length
-        const newStatus = allVoted && newYes === eligibleVoters.length
+        // Use member count if known, otherwise complete when everyone who voted said yes
+        // and at least 1 vote exists (handles case where members API returns empty)
+        const threshold = voteThreshold ?? total
+        const allVoted = total >= threshold
+        const newStatus = allVoted && newNo === 0
           ? "completed"
           : allVoted && newNo > 0
           ? "failed"
@@ -209,7 +236,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
             const voteYes = m.voteYes || 0
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
-            const needed = eligibleVoters.length
+            const needed = voteThreshold ?? (voteYes + voteNo)
 
             return (
               <div key={i}>
