@@ -6,6 +6,12 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronRightIcon, CoinsIcon } from "lucide-react"
 import { useWalletContext } from "@/hooks/use-wallet"
+import algosdk from "algosdk"
+import { PeraWalletConnect } from "@perawallet/connect"
+
+const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET!
+const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
+const peraWallet = new PeraWalletConnect()
 
 interface MilestoneFundingProps {
   proposalId: number
@@ -114,17 +120,33 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     }
   }
 
-  // Release funds — records in DB, deducts from displayed treasury balance
-  // No Pera signing needed — treasury wallet handles actual transfer separately
   const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
     setReleasingIdx(milestoneIdx)
     try {
-      const txId = `release_${proposalId}_m${milestoneIdx}_${Date.now()}`
+      // Build txn from TREASURY → proposer
+      const params = await algodClient.getTransactionParams().do()
+      const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        sender: TREASURY,
+        receiver: proposalCreator,
+        amount: Math.round(amountAlgo * 1_000_000),
+        suggestedParams: params,
+        note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
+      })
+
+      // Sign with treasury wallet via Pera — Pera will prompt treasury wallet to confirm
+      const signedTxns = await peraWallet.signTransaction([[{ txn, signers: [TREASURY] }]])
+      const sendRes = await algodClient.sendRawTransaction(signedTxns[0]).do()
+      const txId = sendRes.txid || sendRes.txId || String(sendRes)
+      await algosdk.waitForConfirmation(algodClient, txId, 10)
+
+      // Record in DB
       await fetch("/api/treasury", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proposalId, milestoneIdx, amountAlgo, txId }),
       })
+
+      // Update milestone statuses
       const pRes = await fetch(`/api/proposals/${proposalId}`)
       const fresh = await pRes.json()
       const finalMilestones = (fresh.milestones || []).map((m: any, i: number) => {
@@ -138,13 +160,14 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         body: JSON.stringify({ id: proposalId, milestones: finalMilestones }),
       })
       setMilestones(finalMilestones)
+
       const nextReleased = [...releasedMilestones, milestoneIdx]
       setReleasedMilestones(nextReleased)
       setTreasuryBalance(prev => prev !== null ? prev - amountAlgo : null)
       setReleaseModal({
         idx: milestoneIdx,
         amount: amountAlgo,
-        txId,
+        txId: typeof txId === "string" ? txId : String(txId),
         allDone: nextReleased.length >= milestones.length,
       })
     } catch (err: any) {
@@ -278,7 +301,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                       {isProposer ? (
                         <Button size="sm" onClick={() => handleRelease(i, amountAlgo)} disabled={releasingIdx === i}
                           className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
-                          {releasingIdx === i ? "⏳ Releasing..." : `💸 Release ${amountAlgo} ALGO`}
+                          {releasingIdx === i ? "⏳ Confirm in Pera..." : `💸 Release ${amountAlgo} ALGO`}
                         </Button>
                       ) : (
                         <p className="text-yellow-400/70 text-xs">⏳ Awaiting proposer to release {amountAlgo} ALGO</p>
@@ -330,6 +353,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
                 <p className="text-white/30 text-xs">{milestones.length - releasedMilestones.length} milestone(s) remaining</p>
               </>
             )}
+            <p className="text-white/20 text-xs font-mono truncate">TX: {releaseModal.txId.slice(0, 24)}...</p>
             <Button onClick={() => setReleaseModal(null)} className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-xl">
               {releaseModal.allDone ? "🎉 Done" : "Continue"}
             </Button>
