@@ -30,19 +30,20 @@ export function WalletGuard({
     }
   }, [isConnected, loading, router])
 
-  // Show spinner while checking wallet — never show blank screen
+  // Still checking — but only show spinner if no saved address (cold load)
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <div className="w-8 h-8 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto" />
-          <p className="text-white/50 text-sm">Checking wallet connection...</p>
+    const hasSaved = typeof window !== 'undefined' && !!localStorage.getItem('wallet_address')
+    if (!hasSaved) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
         </div>
-      </div>
-    )
+      )
+    }
+    // Has saved address — render children immediately, wallet restores in background
   }
 
-  if (!isConnected || !address) return null
+  if (!loading && (!isConnected || !address)) return null
 
   if (showBalanceWarning && requireBalance > 0 && balance < requireBalance) {
     return (
