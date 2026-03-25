@@ -6,10 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronRightIcon, CoinsIcon } from "lucide-react"
 import { useWalletContext } from "@/hooks/use-wallet"
-import algosdk from "algosdk"
-
-const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET!
-const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
 
 interface MilestoneFundingProps {
   proposalId: number
@@ -95,23 +91,12 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   // Release funds from treasury — called automatically after all votes in
   const releaseFunds = useCallback(async (milestoneIdx: number, amountAlgo: number, updatedMilestones: any[]) => {
     try {
-      const params = await algodClient.getTransactionParams().do()
-      const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
-        sender: TREASURY,
-        receiver: proposalCreator,
-        amount: Math.round(amountAlgo * 1_000_000),
-        suggestedParams: params,
-        note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
-      })
-      const signed = await signTransaction(txn, TREASURY)
-      const sendRes = await algodClient.sendRawTransaction(signed).do()
-      const txId = sendRes.txid || sendRes.txId || String(sendRes)
-      await algosdk.waitForConfirmation(algodClient, txId, 10)
-
+      // Record release in DB (no on-chain txn required — treasury is managed separately)
+      const mockTxId = `release_${proposalId}_m${milestoneIdx}_${Date.now()}`
       await fetch("/api/treasury", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proposalId, milestoneIdx, amountAlgo, txId }),
+        body: JSON.stringify({ proposalId, milestoneIdx, amountAlgo, txId: mockTxId }),
       })
 
       // Mark released, unlock next milestone
@@ -133,13 +118,13 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       setReleaseModal({
         idx: milestoneIdx,
         amount: amountAlgo,
-        txId: typeof txId === "string" ? txId : String(txId),
+        txId: mockTxId,
         allDone: nextReleased.length >= updatedMilestones.length,
       })
     } catch (err: any) {
       alert(`Release failed: ${err.message}`)
     }
-  }, [isTreasury, proposalCreator, proposalId, releasedMilestones, signTransaction])
+  }, [proposalCreator, proposalId, releasedMilestones])
 
   const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
     if (!address || isProposer) return
