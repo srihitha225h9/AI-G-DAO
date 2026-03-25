@@ -34,6 +34,17 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const isProposer = address === proposalCreator
   const voteThreshold = memberCount > 1 ? memberCount - 1 : 1
 
+  // Reset voted state whenever wallet address changes
+  useEffect(() => {
+    setVotedMilestones({})
+    if (!address || !proposalId) return
+    try {
+      const key = `milestone_votes_${proposalId}_${address}`
+      const stored = localStorage.getItem(key)
+      if (stored) setVotedMilestones(JSON.parse(stored))
+    } catch {}
+  }, [address, proposalId])
+
   const fetchData = useCallback(async () => {
     try {
       const [pRes, mRes, tRes] = await Promise.all([
@@ -86,7 +97,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     return () => clearInterval(interval)
   }, [fetchData])
 
-  // Auto-clear stale localStorage votes when DB shows 0 votes (milestone was reset)
+  // Auto-clear stale localStorage votes when DB shows 0 votes for that milestone
   useEffect(() => {
     if (!address || !proposalId || !milestones.length) return
     try {
@@ -98,9 +109,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       let changed = false
       Object.entries(saved).forEach(([idx, vote]) => {
         const m = milestones[Number(idx)]
-        // If DB shows 0 votes for this milestone, the vote was reset — clear it
         if (m && (m.voteYes || 0) === 0 && (m.voteNo || 0) === 0) {
-          changed = true
+          changed = true // DB was reset — clear stale vote
         } else if (m) {
           cleaned[Number(idx)] = vote as "for" | "against"
         }
@@ -108,8 +118,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       if (changed) {
         localStorage.setItem(key, JSON.stringify(cleaned))
         setVotedMilestones(cleaned)
-      } else {
-        setVotedMilestones(saved as Record<number, "for" | "against">)
       }
     } catch {}
   }, [address, proposalId, milestones])
@@ -260,6 +268,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
             const myVote = votedMilestones[i]
+            // Each wallet can vote once — tracked per wallet address in localStorage
             const canVote = isActive && !isProposer && !myVote && !!address
 
             return (
