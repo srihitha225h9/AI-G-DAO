@@ -19,7 +19,7 @@ interface WalletState {
   connect: () => Promise<void>
   disconnect: () => void
   clearError: () => void
-  signTransaction: (txn: algosdk.Transaction) => Promise<Uint8Array>
+  signTransaction: (txn: algosdk.Transaction, signerAddress?: string) => Promise<Uint8Array>
 }
 
 // Create context for wallet state
@@ -141,15 +141,16 @@ function useWallet(): WalletState {
     setError(null)
   }, [])
 
-  const signTransaction = useCallback(async (txn: algosdk.Transaction): Promise<Uint8Array> => {
+  const signTransaction = useCallback(async (txn: algosdk.Transaction, signerAddress?: string): Promise<Uint8Array> => {
     if (!isConnected || !address) {
       throw new Error('Wallet not connected')
     }
 
     try {
+      const signer = signerAddress || address
       const txnsToSign = [{
         txn: txn,
-        signers: [address]
+        signers: [signer]
       }]
 
       const signedTxns = await peraWallet.signTransaction([txnsToSign])
@@ -163,24 +164,37 @@ function useWallet(): WalletState {
   // Check for existing connection on mount
   useEffect(() => {
     const checkConnection = async () => {
+      // Fast path: if no saved address, skip reconnect entirely
+      const savedAddress = localStorage.getItem('wallet_address')
+      if (!savedAddress) {
+        setLoading(false)
+        return
+      }
+
+      // Optimistically restore from localStorage immediately
+      setAddress(savedAddress)
+      setIsConnected(true)
+      setLoading(false)
+
+      // Then verify session in background (with timeout)
       try {
-        const accounts = await peraWallet.reconnectSession()
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 3000)
+        )
+        const accounts = await Promise.race([peraWallet.reconnectSession(), timeout])
         if (accounts.length > 0) {
-          const account = accounts[0]
-          setAddress(account)
-          setIsConnected(true)
-          await fetchBalance(account)
-          try {
-            await memberTracker.registerMember(account)
-          } catch (err) {
-            console.error('Failed to register member:', err)
-          }
+          fetchBalance(accounts[0])
+          memberTracker.registerMember(accounts[0]).catch(() => {})
+        } else {
+          // Session expired
+          setIsConnected(false)
+          setAddress(null)
+          localStorage.removeItem('wallet_address')
         }
       } catch (err) {
-        console.error('Failed to reconnect wallet:', err)
-        localStorage.removeItem('wallet_address')
-      } finally {
-        setLoading(false)
+        // On timeout or error, keep the optimistic state so UI doesn't block
+        console.warn('Wallet reconnect check failed/timed out:', err)
+        fetchBalance(savedAddress).catch(() => {})
       }
     }
 

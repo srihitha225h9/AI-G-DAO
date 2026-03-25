@@ -103,7 +103,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         suggestedParams: params,
         note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
       })
-      const signed = await signTransaction(txn)
+      const signed = await signTransaction(txn, TREASURY)
       const sendRes = await algodClient.sendRawTransaction(signed).do()
       const txId = sendRes.txid || sendRes.txId || String(sendRes)
       await algosdk.waitForConfirmation(algodClient, txId, 10)
