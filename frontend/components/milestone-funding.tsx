@@ -29,19 +29,25 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
   const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [votedMilestones, setVotedMilestones] = useState<Record<number, "for" | "against">>({})
+  // DB-backed: which milestones this wallet has voted on
+  const [myVotes, setMyVotes] = useState<Record<number, "for" | "against">>({})
 
   const isProposer = address === proposalCreator
   const voteThreshold = memberCount > 1 ? memberCount - 1 : 1
 
-  // Reset voted state whenever wallet address changes
-  useEffect(() => {
-    setVotedMilestones({})
+  // Fetch this wallet's milestone votes from DB
+  const fetchMyVotes = useCallback(async () => {
     if (!address || !proposalId) return
     try {
-      const key = `milestone_votes_${proposalId}_${address}`
-      const stored = localStorage.getItem(key)
-      if (stored) setVotedMilestones(JSON.parse(stored))
+      const res = await fetch(`/api/milestone-votes?proposalId=${proposalId}&voterAddress=${encodeURIComponent(address)}`)
+      if (res.ok) {
+        const data = await res.json()
+        const map: Record<number, "for" | "against"> = {}
+        for (const row of data.votes || []) {
+          map[row.milestone_idx] = row.vote
+        }
+        setMyVotes(map)
+      }
     } catch {}
   }, [address, proposalId])
 
@@ -93,34 +99,16 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
 
   useEffect(() => {
     fetchData()
-    const interval = setInterval(fetchData, 8000)
+    fetchMyVotes()
+    const interval = setInterval(() => { fetchData(); fetchMyVotes() }, 8000)
     return () => clearInterval(interval)
-  }, [fetchData])
+  }, [fetchData, fetchMyVotes])
 
-  // Auto-clear stale localStorage votes when DB shows 0 votes for that milestone
+  // Re-fetch my votes when wallet changes
   useEffect(() => {
-    if (!address || !proposalId || !milestones.length) return
-    try {
-      const key = `milestone_votes_${proposalId}_${address}`
-      const stored = localStorage.getItem(key)
-      if (!stored) return
-      const saved = JSON.parse(stored) as Record<string, string>
-      const cleaned: Record<number, "for" | "against"> = {}
-      let changed = false
-      Object.entries(saved).forEach(([idx, vote]) => {
-        const m = milestones[Number(idx)]
-        if (m && (m.voteYes || 0) === 0 && (m.voteNo || 0) === 0) {
-          changed = true // DB was reset — clear stale vote
-        } else if (m) {
-          cleaned[Number(idx)] = vote as "for" | "against"
-        }
-      })
-      if (changed) {
-        localStorage.setItem(key, JSON.stringify(cleaned))
-        setVotedMilestones(cleaned)
-      }
-    } catch {}
-  }, [address, proposalId, milestones])
+    setMyVotes({})
+    fetchMyVotes()
+  }, [address, fetchMyVotes])
 
   const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
     if (!address || isProposer) return
@@ -153,6 +141,14 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         return { ...m, voteYes: newYes, voteNo: newNo, status: newStatus }
       })
 
+      // Save vote to DB first
+      await fetch("/api/milestone-votes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposalId, milestoneIdx, voterAddress: address, vote }),
+      })
+
+      // Update milestone counts
       const res = await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -161,9 +157,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
 
       if (res.ok) {
         setMilestones(updated)
-        const newVoted = { ...votedMilestones, [milestoneIdx]: vote }
-        setVotedMilestones(newVoted)
-        localStorage.setItem(`milestone_votes_${proposalId}_${address}`, JSON.stringify(newVoted))
+        setMyVotes(prev => ({ ...prev, [milestoneIdx]: vote }))
       } else {
         alert("Vote failed to save. Please try again.")
       }
@@ -209,7 +203,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         body: JSON.stringify({ id: proposalId, milestones: finalMilestones }),
       })
       setMilestones(finalMilestones)
-
       const nextReleased = [...releasedMilestones, milestoneIdx]
       setReleasedMilestones(nextReleased)
       setTreasuryBalance(prev => prev !== null ? prev - amountAlgo : null)
@@ -267,8 +260,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
             const voteYes = m.voteYes || 0
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
-            const myVote = votedMilestones[i]
-            // Each wallet can vote once — tracked per wallet address in localStorage
+            const myVote = myVotes[i]
+            // canVote: milestone active + not proposer + this wallet hasn't voted (per DB) + wallet connected
             const canVote = isActive && !isProposer && !myVote && !!address
 
             return (
