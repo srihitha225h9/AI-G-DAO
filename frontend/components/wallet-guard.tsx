@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useWalletContext } from '@/hooks/use-wallet'
 import { Button } from '@/components/ui/button'
@@ -20,27 +20,27 @@ export function WalletGuard({
 }: WalletGuardProps) {
   const { isConnected, address, balance, loading } = useWalletContext()
   const router = useRouter()
+  const [hasSavedAddress, setHasSavedAddress] = useState(false)
+
+  useEffect(() => {
+    // Safe localStorage access — only on client
+    setHasSavedAddress(!!localStorage.getItem('wallet_address'))
+  }, [])
 
   useEffect(() => {
     if (!loading && !isConnected) {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('redirect_after_connect', window.location.pathname)
-      }
+      localStorage.setItem('redirect_after_connect', window.location.pathname)
       router.push('/connect-wallet')
     }
   }, [isConnected, loading, router])
 
-  // Still checking — but only show spinner if no saved address (cold load)
-  if (loading) {
-    const hasSaved = typeof window !== 'undefined' && !!localStorage.getItem('wallet_address')
-    if (!hasSaved) {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
-          <div className="w-6 h-6 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
-        </div>
-      )
-    }
-    // Has saved address — render children immediately, wallet restores in background
+  // Show spinner only on cold load (no saved address)
+  if (loading && !hasSavedAddress) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+      </div>
+    )
   }
 
   if (!loading && (!isConnected || !address)) return null
