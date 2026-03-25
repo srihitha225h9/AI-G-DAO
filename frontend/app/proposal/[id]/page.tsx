@@ -130,7 +130,6 @@ export default function ProposalDetailPage() {
     if (!proposal || !address) return
     setMilestoneVotingId(milestoneIdx)
     try {
-      // Always fetch fresh data from DB before voting to avoid overwriting other wallets' votes
       const fresh = await getProposal(proposal.id)
       const freshMilestones = fresh?.milestones || proposal.milestones
       const updatedMilestones = freshMilestones.map((m: any, i: number) => {
@@ -138,6 +137,7 @@ export default function ProposalDetailPage() {
         const newVoteYes = vote === 'for' ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
         const newVoteNo = vote === 'against' ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
         const total = newVoteYes + newVoteNo
+        // Vote approved → mark as completed, but do NOT unlock next yet (that happens after funds released)
         const newStatus = total >= 1 ? (newVoteYes / total > 0.5 ? 'completed' : 'failed') : m.status
         return { ...m, voteYes: newVoteYes, voteNo: newVoteNo, status: newStatus }
       })
@@ -175,11 +175,28 @@ export default function ProposalDetailPage() {
       const sendRes = await algodClient.sendRawTransaction(signed).do()
       const txId = sendRes.txid || sendRes.txId || sendRes
       await algosdk.waitForConfirmation(algodClient, txId, 10)
+
+      // Record release in DB
       await fetch('/api/treasury', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ proposalId: proposal.id, milestoneIdx, amountAlgo, txId }),
       })
+
+      // Mark current milestone as released and unlock the next one
+      const fresh = await getProposal(proposal.id)
+      const freshMilestones = (fresh?.milestones || proposal.milestones).map((m: any, i: number) => {
+        if (i === milestoneIdx) return { ...m, status: 'released' }
+        if (i === milestoneIdx + 1) return { ...m, status: 'active' }
+        return m
+      })
+      await fetch('/api/proposals', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: proposal.id, milestones: freshMilestones }),
+      })
+      setProposal((prev: any) => ({ ...prev, milestones: freshMilestones }))
+
       setReleasedMilestones(prev => {
         const next = [...prev, milestoneIdx]
         const totalMilestones = proposal.milestones?.length || 3
@@ -475,14 +492,16 @@ export default function ProposalDetailPage() {
                       const isLocked = m.status === 'locked'
                       const isCompleted = m.status === 'completed'
                       const isFailed = m.status === 'failed'
-                      const prevCompleted = i === 0 || ['completed'].includes(proposal.milestones[i - 1]?.status)
-                      const canVote = isActive && prevCompleted && !myVote && !isProposer && !!address
-                      const isReleased = releasedMilestones.includes(i)
+                      const isReleased = m.status === 'released' || releasedMilestones.includes(i)
+                      // Next milestone only unlocks after previous funds are released
+                      const prevReleased = i === 0 || proposal.milestones[i - 1]?.status === 'released' || releasedMilestones.includes(i - 1)
+                      const canVote = isActive && prevReleased && !myVote && !isProposer && !!address
                       const isTreasury = address === TREASURY
                       const canRelease = isCompleted && !isReleased && isTreasury
 
                       return (
                         <Card key={i} className={`border rounded-2xl ${
+                          isReleased  ? 'bg-purple-500/5 border-purple-500/20' :
                           isCompleted ? 'bg-green-500/5 border-green-500/20' :
                           isFailed    ? 'bg-red-500/5 border-red-500/20' :
                           isLocked    ? 'bg-white/3 border-white/5 opacity-60' :
@@ -501,12 +520,13 @@ export default function ProposalDetailPage() {
                               <div className="flex items-center gap-2 shrink-0">
                                 <span className="text-white/50 text-xs">${amount.toLocaleString()} ({m.percent}%)</span>
                                 <Badge className={`text-xs ${
+                                  isReleased  ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
                                   isCompleted ? 'bg-green-500/20 text-green-400 border-green-500/30' :
                                   isFailed    ? 'bg-red-500/20 text-red-400 border-red-500/30' :
                                   isLocked    ? 'bg-white/5 text-white/30 border-white/10' :
                                   'bg-blue-500/20 text-blue-400 border-blue-500/30'
                                 }`}>
-                                  {isReleased ? '💸 Paid Out' : isCompleted ? '✅ Approved' : isFailed ? '✗ Rejected' : isLocked ? '🔒 Locked' : '⏳ Active'}
+                                  {isReleased ? '💸 Funds Released' : isCompleted ? '✅ Approved — Awaiting Release' : isFailed ? '✗ Rejected' : isLocked ? '🔒 Locked' : '⏳ Active'}
                                 </Badge>
                               </div>
                             </div>
