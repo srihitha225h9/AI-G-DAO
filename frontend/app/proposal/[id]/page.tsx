@@ -46,6 +46,7 @@ export default function ProposalDetailPage() {
   const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
   const [releasedMilestones, setReleasedMilestones] = useState<number[]>([])
   const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
+  const [releaseModal, setReleaseModal] = useState<{ milestoneIdx: number; amountAlgo: number; txId: string; allDone: boolean } | null>(null)
 
   // Load persisted milestone votes for this wallet+proposal from localStorage
   useEffect(() => {
@@ -179,9 +180,14 @@ export default function ProposalDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ proposalId: proposal.id, milestoneIdx, amountAlgo, txId }),
       })
-      setReleasedMilestones(prev => [...prev, milestoneIdx])
+      setReleasedMilestones(prev => {
+        const next = [...prev, milestoneIdx]
+        const totalMilestones = proposal.milestones?.length || 3
+        const allDone = next.length >= totalMilestones
+        setReleaseModal({ milestoneIdx, amountAlgo, txId, allDone })
+        return next
+      })
       setTreasuryBalance(prev => prev !== null ? prev - amountAlgo : null)
-      alert(`✅ ${amountAlgo} ALGO released to proposer! TX: ${txId}`)
     } catch (err: any) {
       alert(`❌ Release failed: ${err.message}`)
     } finally {
@@ -639,6 +645,40 @@ export default function ProposalDetailPage() {
           </div>
         </main>
       </div>
-    </WalletGuard>
+        {/* Release Funds Modal */}
+        {releaseModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setReleaseModal(null)} />
+            <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4">
+              <div className="w-16 h-16 mx-auto rounded-full flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg">
+                <span className="text-3xl">{releaseModal.allDone ? '🎉' : '💸'}</span>
+              </div>
+              {releaseModal.allDone ? (
+                <>
+                  <h2 className="text-white font-bold text-xl">All Funds Released!</h2>
+                  <p className="text-white/60 text-sm">All {proposal?.milestones?.length} milestones completed. The full funding has been sent to the proposer.</p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-white font-bold text-xl">Milestone {releaseModal.milestoneIdx + 1} Funded!</h2>
+                  <p className="text-white/60 text-sm">
+                    <span className="text-purple-300 font-semibold">{releaseModal.amountAlgo} ALGO</span> has been released to the proposer.
+                  </p>
+                  <p className="text-white/30 text-xs">
+                    {proposal?.milestones?.length - (releasedMilestones.length)} milestone{proposal?.milestones?.length - releasedMilestones.length !== 1 ? 's' : ''} remaining
+                  </p>
+                </>
+              )}
+              <p className="text-white/20 text-xs font-mono truncate">TX: {typeof releaseModal.txId === 'string' ? releaseModal.txId.slice(0, 24) : ''}...</p>
+              <Button
+                onClick={() => setReleaseModal(null)}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-xl"
+              >
+                {releaseModal.allDone ? '🎉 Done' : 'Continue'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </WalletGuard>
   )
 }
