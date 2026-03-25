@@ -29,20 +29,11 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
   const [releasingIdx, setReleasingIdx] = useState<number | null>(null)
   const [releaseModal, setReleaseModal] = useState<{ idx: number; amount: number; txId: string; allDone: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [milestoneVotes, setMilestoneVotes] = useState<Record<number, "for" | "against">>({})
+  // Track which milestones this wallet has voted on — keyed by milestone index
+  const [votedMilestones, setVotedMilestones] = useState<Record<number, "for" | "against">>({})
 
   const isProposer = address === proposalCreator
-  // Eligible voters = all members except proposer
-  // If memberCount unknown, threshold = 1 (at least 1 community member must vote)
   const voteThreshold = memberCount > 1 ? memberCount - 1 : 1
-
-  useEffect(() => {
-    if (!address || !proposalId) return
-    try {
-      const stored = localStorage.getItem(`milestone_votes_${proposalId}_${address}`)
-      if (stored) setMilestoneVotes(JSON.parse(stored))
-    } catch {}
-  }, [address, proposalId])
 
   const fetchData = useCallback(async () => {
     try {
@@ -96,11 +87,19 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
     return () => clearInterval(interval)
   }, [fetchData])
 
+  // Load voted milestones from localStorage — but only use as UI hint, not as gate
+  useEffect(() => {
+    if (!address || !proposalId) return
+    try {
+      const stored = localStorage.getItem(`milestone_votes_${proposalId}_${address}`)
+      if (stored) setVotedMilestones(JSON.parse(stored))
+    } catch {}
+  }, [address, proposalId])
+
   const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
     if (!address || isProposer) return
     setVotingIdx(milestoneIdx)
     try {
-      // Always fetch fresh member count + proposal data before voting
       const [pRes, mRes] = await Promise.all([
         fetch(`/api/proposals/${proposalId}`),
         fetch("/api/members"),
@@ -108,7 +107,6 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
       const fresh = await pRes.json()
       const freshMilestones = fresh.milestones || []
 
-      // Get fresh threshold
       let threshold = voteThreshold
       if (mRes.ok) {
         const md = await mRes.json()
@@ -129,15 +127,22 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
         return { ...m, voteYes: newYes, voteNo: newNo, status: newStatus }
       })
 
-      await fetch("/api/proposals", {
+      const res = await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: proposalId, milestones: updated }),
       })
-      setMilestones(updated)
-      const newVotes = { ...milestoneVotes, [milestoneIdx]: vote }
-      setMilestoneVotes(newVotes)
-      localStorage.setItem(`milestone_votes_${proposalId}_${address}`, JSON.stringify(newVotes))
+
+      if (res.ok) {
+        setMilestones(updated)
+        const newVoted = { ...votedMilestones, [milestoneIdx]: vote }
+        setVotedMilestones(newVoted)
+        localStorage.setItem(`milestone_votes_${proposalId}_${address}`, JSON.stringify(newVoted))
+      } else {
+        alert("Vote failed to save. Please try again.")
+      }
+    } catch (err: any) {
+      alert(`Vote failed: ${err.message}`)
     } finally {
       setVotingIdx(null)
     }
@@ -233,11 +238,14 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding }: 
             const isFailed = m.status === "failed"
             const isLocked = m.status === "locked"
             const isActive = m.status === "active" || m.status === "pending"
-            const myVote = milestoneVotes[i]
-            const canVote = isActive && !isProposer && !myVote && !!address
             const voteYes = m.voteYes || 0
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
+            // Use DB vote count to determine if this wallet already voted
+            // A wallet has voted if totalVotes >= 1 and they have a localStorage entry
+            const myVote = votedMilestones[i]
+            // Show vote buttons if: milestone active, not proposer, not yet voted (per localStorage), wallet connected
+            const canVote = isActive && !isProposer && !myVote && !!address
 
             return (
               <div key={i}>
