@@ -23,7 +23,7 @@ async function ensureTable() {
 
 async function getLiveBalance(): Promise<number> {
   const now = Date.now()
-  if (balanceCache && now - balanceCache.ts < 30_000) return balanceCache.value
+  if (balanceCache && now - balanceCache.ts < 10_000) return balanceCache.value
   try {
     const res = await fetch(`${ALGOD_URL}/v2/accounts/${TREASURY}`, {
       headers: { 'X-Algo-API-Token': '' },
@@ -45,13 +45,7 @@ export async function GET(req: NextRequest) {
   try {
     await ensureTable()
 
-    const [liveBalance, releasesRes] = await Promise.all([
-      getLiveBalance(),
-      pool.query('SELECT COALESCE(SUM(amount_algo),0) as total FROM milestone_releases'),
-    ])
-
-    const totalReleased = parseFloat(releasesRes.rows[0].total || '0')
-    const balanceAlgo = Math.max(0, liveBalance - totalReleased)
+    const balanceAlgo = await getLiveBalance()
 
     let released: number[] = []
     if (proposalId) {
