@@ -54,20 +54,55 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
 
   const fetchBackground = useCallback(async () => {
     try {
-      const [mRes, tRes, pRes] = await Promise.all([
+      const [mRes, tRes, pRes, allVotesRes] = await Promise.all([
         fetch("/api/members"),
         fetch(`/api/treasury?proposalId=${proposalId}`),
         fetch(`/api/proposals/${proposalId}`),
+        fetch(`/api/milestone-votes?proposalId=${proposalId}`),
       ])
-      if (mRes.ok) { const md = await mRes.json(); setMemberCount(md.count || (md.members || []).length || 0) }
+
+      let threshold = 1
+      if (mRes.ok) {
+        const md = await mRes.json()
+        const eligible = (md.members || []).filter((m: any) => m.address !== proposalCreator)
+        threshold = eligible.length > 0 ? eligible.length : 1
+        setMemberCount(md.count || (md.members || []).length || 0)
+      }
       if (tRes.ok) { const td = await tRes.json(); setTreasuryBalance(td.balanceAlgo); setReleasedMilestones(td.released || []) }
-      if (pRes.ok) { const p = await pRes.json(); if (p.milestones?.length) setMilestones(p.milestones) }
+
+      if (pRes.ok && allVotesRes.ok) {
+        const p = await pRes.json()
+        const allVotesData = await allVotesRes.json()
+        if (p.milestones?.length) {
+          // Recompute voteYes/voteNo/status from DB votes (source of truth)
+          const recomputed = p.milestones.map((m: any, i: number) => {
+            const mv = (allVotesData.votes || []).filter((v: any) => v.milestone_idx === i)
+            const dbYes = mv.filter((v: any) => v.vote === "for").length
+            const dbNo = mv.filter((v: any) => v.vote === "against").length
+            const dbTotal = dbYes + dbNo
+            // Only recompute status for pending_proof milestones
+            if (m.status !== "pending_proof") return { ...m, voteYes: dbYes, voteNo: dbNo }
+            const newStatus = dbNo > 0 ? "failed" : dbTotal >= threshold ? "completed" : "pending_proof"
+            return { ...m, voteYes: dbYes, voteNo: dbNo, status: newStatus }
+          })
+          setMilestones(recomputed)
+          // If any milestone status changed, persist it to DB
+          const changed = recomputed.some((m: any, i: number) => m.status !== p.milestones[i].status)
+          if (changed) {
+            fetch("/api/proposals", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: proposalId, milestones: recomputed }),
+            })
+          }
+        }
+      }
     } catch {}
-  }, [proposalId])
+  }, [proposalId, proposalCreator])
 
   useEffect(() => {
     fetchMyVotes(); fetchBackground()
-    const interval = setInterval(() => { fetchBackground(); fetchMyVotes() }, 10000)
+    const interval = setInterval(() => { fetchBackground(); fetchMyVotes() }, 5000)
     return () => clearInterval(interval)
   }, [fetchBackground, fetchMyVotes])
 
