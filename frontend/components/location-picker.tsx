@@ -3,17 +3,16 @@
 import { useEffect, useRef, useState } from "react"
 import { MapPinIcon, XCircleIcon } from "lucide-react"
 
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!
-
 interface LocationPickerProps {
   value: string
   onChange: (location: string, lat: number, lng: number) => void
 }
 
 interface Suggestion {
-  id: string
-  place_name: string
-  center: [number, number]
+  place_id: string
+  display_name: string
+  lat: string
+  lon: string
 }
 
 export function LocationPicker({ value, onChange }: LocationPickerProps) {
@@ -27,67 +26,75 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<any>(null)
 
-  // Autocomplete search
+  // Autocomplete using Nominatim (free, no API key)
   useEffect(() => {
-    if (!query || query.length < 2) { setSuggestions([]); return }
+    if (!query || query.length < 3) { setSuggestions([]); return }
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&autocomplete=true&limit=5`
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`,
+          { headers: { 'Accept-Language': 'en' } }
         )
         const data = await res.json()
-        setSuggestions(data.features || [])
+        setSuggestions(data || [])
       } catch {}
-    }, 300)
+    }, 400)
   }, [query])
 
-  // Init map after selection
+  // Init Leaflet map after selection
   useEffect(() => {
     if (!showMap || !selected || !mapContainerRef.current) return
     setLoadingMap(true)
 
-    import("mapbox-gl").then((mapboxgl) => {
-      // @ts-ignore
-      mapboxgl.default.accessToken = MAPBOX_TOKEN
-
+    // Dynamically import leaflet (avoids SSR issues)
+    Promise.all([
+      import("leaflet"),
+      import("leaflet/dist/leaflet.css" as any),
+    ]).then(([L]) => {
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null }
 
-      // @ts-ignore
-      const map = new mapboxgl.default.Map({
-        container: mapContainerRef.current!,
-        style: "mapbox://styles/mapbox/dark-v11",
-        center: [selected.lng, selected.lat],
-        zoom: 13,
+      // Fix default marker icons
+      delete (L.default.Icon.Default.prototype as any)._getIconUrl
+      L.default.Icon.Default.mergeOptions({
+        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       })
 
-      // @ts-ignore
-      const marker = new mapboxgl.default.Marker({ color: "#8b5cf6", draggable: true })
-        .setLngLat([selected.lng, selected.lat])
-        .addTo(map)
+      const map = L.default.map(mapContainerRef.current!, { zoomControl: true })
+        .setView([selected.lat, selected.lng], 14)
 
-      marker.on("dragend", () => {
-        const lngLat = marker.getLngLat()
-        setSelected({ lat: lngLat.lat, lng: lngLat.lng })
-        onChange(query, lngLat.lat, lngLat.lng)
+      L.default.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map)
+
+      const marker = L.default.marker([selected.lat, selected.lng], { draggable: true }).addTo(map)
+
+      marker.on('dragend', () => {
+        const pos = marker.getLatLng()
+        setSelected({ lat: pos.lat, lng: pos.lng })
+        onChange(query, pos.lat, pos.lng)
       })
-
-      map.on("load", () => setLoadingMap(false))
 
       mapRef.current = map
       markerRef.current = marker
+      setLoadingMap(false)
     })
 
     return () => { if (mapRef.current) { mapRef.current.remove(); mapRef.current = null } }
   }, [showMap, selected?.lat, selected?.lng])
 
   const handleSelect = (s: Suggestion) => {
-    const [lng, lat] = s.center
-    setQuery(s.place_name)
+    const lat = parseFloat(s.lat)
+    const lng = parseFloat(s.lon)
+    // Shorten display name to first 2 parts
+    const shortName = s.display_name.split(',').slice(0, 3).join(',').trim()
+    setQuery(shortName)
     setSuggestions([])
     setSelected({ lat, lng })
     setShowMap(true)
-    onChange(s.place_name, lat, lng)
+    onChange(shortName, lat, lng)
   }
 
   const handleClear = () => {
@@ -102,7 +109,7 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
     <div className="space-y-2">
       {/* Search input */}
       <div className="relative">
-        <MapPinIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
+        <MapPinIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none z-10" />
         <input
           type="text"
           value={query}
@@ -111,23 +118,19 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
           className="w-full pl-9 pr-9 bg-white/5 border border-white/20 text-white placeholder-white/40 rounded-xl px-3 py-2 h-10 sm:h-12 text-sm focus:outline-none focus:border-white/40"
         />
         {query && (
-          <button type="button" onClick={handleClear} className="absolute right-3 top-1/2 -translate-y-1/2">
+          <button type="button" onClick={handleClear} className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
             <XCircleIcon className="w-4 h-4 text-white/30 hover:text-white/60" />
           </button>
         )}
 
-        {/* Dropdown suggestions */}
+        {/* Dropdown */}
         {suggestions.length > 0 && (
           <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-white/10 rounded-xl overflow-hidden shadow-xl">
             {suggestions.map(s => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => handleSelect(s)}
-                className="w-full text-left px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 flex items-center gap-2 border-b border-white/5 last:border-0"
-              >
-                <MapPinIcon className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                {s.place_name}
+              <button key={s.place_id} type="button" onClick={() => handleSelect(s)}
+                className="w-full text-left px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 flex items-start gap-2 border-b border-white/5 last:border-0">
+                <MapPinIcon className="w-3.5 h-3.5 text-purple-400 shrink-0 mt-0.5" />
+                <span className="line-clamp-2">{s.display_name}</span>
               </button>
             ))}
           </div>
@@ -143,13 +146,14 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
             </div>
           )}
           <div ref={mapContainerRef} className="w-full h-full" />
-          <p className="absolute bottom-2 left-0 right-0 text-center text-white/40 text-xs pointer-events-none">
+          <p className="absolute bottom-2 left-0 right-0 text-center text-xs pointer-events-none z-10"
+            style={{ color: 'rgba(0,0,0,0.6)', textShadow: '0 0 4px white' }}>
             Drag the pin to fine-tune the exact location
           </p>
         </div>
       )}
 
-      {/* Coordinates display */}
+      {/* Coordinates */}
       {selected && (
         <p className="text-white/30 text-xs px-1">
           📍 {selected.lat.toFixed(5)}, {selected.lng.toFixed(5)}
