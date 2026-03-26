@@ -17,6 +17,7 @@ import { TransactionResult } from "@/lib/transaction-builder"
 import { checkDuplicateProposal } from "@/lib/duplicate-detection"
 import { climateDAOQuery } from "@/lib/blockchain-queries"
 
+// Lazy load transaction components to improve initial page load
 const TransactionStatus = dynamic(() => import("@/components/transaction-status").then(mod => ({ default: mod.TransactionStatus })), {
   loading: () => <div className="animate-pulse bg-white/5 rounded-xl h-32"></div>
 })
@@ -29,7 +30,7 @@ export function SubmitProposalPage() {
   const { submitProposal, loading, error } = useClimateDAO()
   const { setLoading } = useLoading()
   const router = useRouter()
-
+  
   const [formData, setFormData] = useState({
     projectTitle: "",
     description: "",
@@ -40,6 +41,7 @@ export function SubmitProposalPage() {
     location: "",
   })
 
+  // Transaction state
   const [transactionState, setTransactionState] = useState<{
     status: 'idle' | 'pending' | 'confirmed' | 'failed'
     txId?: string
@@ -47,10 +49,20 @@ export function SubmitProposalPage() {
     error?: string
   }>({ status: 'idle' })
 
+  // Reset form on successful transaction
   useEffect(() => {
     if (transactionState.status === 'confirmed') {
+      // Reset form after 3 seconds
       setTimeout(() => {
-        setFormData({ projectTitle: "", description: "", fundingAmount: "", duration: "", expectedImpact: "", category: "", location: "" })
+        setFormData({
+          projectTitle: "",
+          description: "",
+          fundingAmount: "",
+          duration: "",
+          expectedImpact: "",
+          category: "",
+          location: "",
+        })
         setTransactionState({ status: 'idle' })
       }, 3000)
     }
@@ -58,33 +70,52 @@ export function SubmitProposalPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
+    
     if (!isConnected) {
       alert("Please connect your wallet first!")
       router.push('/connect-wallet')
       return
     }
 
+    // Check for duplicate proposals before submission
     try {
       const existingProposals = climateDAOQuery.getStoredProposals()
+      console.log('=== DUPLICATE CHECK START ===')
+      console.log('Checking duplicates against', existingProposals.length, 'proposals')
+      console.log('New proposal title:', formData.projectTitle)
+      console.log('Existing titles:', existingProposals.map(p => p.title))
+      
       if (existingProposals.length > 0) {
-        const duplicateCheck = await checkDuplicateProposal(formData.projectTitle, formData.description, existingProposals)
+        const duplicateCheck = await checkDuplicateProposal(
+          formData.projectTitle,
+          formData.description,
+          existingProposals
+        )
+        console.log('Duplicate check result:', duplicateCheck)
+        console.log('Is duplicate?', duplicateCheck.isDuplicate)
+        console.log('Similar proposals:', duplicateCheck.similar)
+
         if (duplicateCheck.isDuplicate || duplicateCheck.similar.length > 0) {
           const similarTitles = duplicateCheck.similar.map(p => `• ${p.title} (${p.similarity}% similar)\n  Reason: ${p.reason}`).join('\n\n')
           alert(`⚠️ DUPLICATE PROPOSAL DETECTED\n\nThis proposal is too similar to existing ones!\n\nSimilar proposals:\n${similarTitles}\n\nPlease modify your proposal to make it unique.`)
+          console.log('=== DUPLICATE CHECK: BLOCKED SUBMISSION ===')
           return
         }
       }
+      console.log('=== DUPLICATE CHECK: PASSED ===')
     } catch (err) {
       console.error('Duplicate check failed:', err)
+      // Continue with submission if duplicate check fails
     }
 
+    // Reset transaction state
     setTransactionState({ status: 'pending' })
     setLoading(true, "Submitting your proposal to the blockchain...")
 
     try {
       const fundingAmountNum = parseInt(formData.fundingAmount) || 0
-
+      
+      // Submit proposal to blockchain
       const result = await submitProposal({
         title: formData.projectTitle,
         description: formData.description,
@@ -93,10 +124,26 @@ export function SubmitProposalPage() {
         category: formData.category,
         location: formData.location,
       })
-
-      setTransactionState({ status: 'confirmed', txId: result.txId, result })
-      setFormData({ projectTitle: "", description: "", fundingAmount: "", duration: "", expectedImpact: "", category: "", location: "" })
-
+      
+      // Update transaction state with success
+      setTransactionState({
+        status: 'confirmed',
+        txId: result.txId,
+        result: result
+      })
+      
+      // Reset form after successful submission
+      setFormData({
+        projectTitle: "",
+        description: "",
+        fundingAmount: "",
+        duration: "",
+        expectedImpact: "",
+        category: "",
+        location: "",
+      })
+      
+      // Save proposal draft to sessionStorage and redirect to AI impact analysis page
       try {
         if (typeof window !== 'undefined') {
           sessionStorage.setItem('proposalDraft', JSON.stringify({
@@ -107,19 +154,27 @@ export function SubmitProposalPage() {
             expectedImpact: formData.expectedImpact,
             location: formData.location,
             txId: result.txId,
-            proposalId: (result as any).proposalId || undefined,
+            proposalId: (result as any).proposalId || undefined
           }))
         }
       } catch (err) {
         console.warn('Failed to store proposal draft:', err)
       }
 
+      // Redirect user to AI review page for impact analysis
       router.push('/proposal-review')
 
     } catch (err) {
+      console.error('Failed to submit proposal:', err)
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
-      setTransactionState({ status: 'failed', error: errorMessage })
+      
+      // Update transaction state with error
+      setTransactionState({
+        status: 'failed',
+        error: errorMessage
+      })
     } finally {
+      // Always ensure loading is turned off
       setLoading(false)
     }
   }
@@ -128,13 +183,19 @@ export function SubmitProposalPage() {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
+  const closeTransactionStatus = () => {
+    setTransactionState({ status: 'idle' })
+  }
+
   return (
     <div className="relative flex flex-col min-h-[100dvh] text-black overflow-hidden">
+      {/* Blue/Black Gradient Background */}
       <div className="fixed inset-0 z-0">
         <div className="absolute inset-0 bg-gradient-to-br from-blue-900 via-blue-800 to-black"></div>
         <div className="absolute inset-0 bg-black/40"></div>
       </div>
 
+      {/* Mobile-optimized Header */}
       <header className="relative z-10 flex items-center justify-between p-4 sm:p-6">
         <Link href="/dashboard" className="flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors touch-manipulation">
           <ArrowLeftIcon className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -148,24 +209,30 @@ export function SubmitProposalPage() {
         </div>
       </header>
 
+      {/* Main Content */}
       <main className="relative z-10 flex-1 px-4 py-6 pb-16">
         <div className="max-w-2xl mx-auto space-y-6 sm:space-y-8">
-
+          
+          {/* Page Title */}
           <div className="text-center space-y-2 sm:space-y-4">
             <h1 className="text-2xl sm:text-4xl font-bold text-white leading-tight">Submit Climate Proposal</h1>
-            <p className="text-blue-300 text-sm sm:text-lg">Propose your climate impact project to the EcoNexus community</p>
+            <p className="text-blue-300 text-sm sm:text-lg">
+              Propose your climate impact project to the EcoNexus community
+            </p>
           </div>
 
+          {/* Transaction Status */}
           {transactionState.status !== 'idle' && (
             <TransactionStatus
               status={transactionState.status}
               txId={transactionState.txId}
               result={transactionState.result}
               error={transactionState.error}
-              onClose={() => setTransactionState({ status: 'idle' })}
+              onClose={closeTransactionStatus}
             />
           )}
 
+          {/* Proposal Form */}
           <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-2xl shadow-2xl">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-white flex items-center gap-2 text-lg sm:text-xl">
@@ -179,9 +246,12 @@ export function SubmitProposalPage() {
 
             <CardContent className="p-4 sm:p-6">
               <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-
+                
+                {/* Project Title */}
                 <div className="space-y-2">
-                  <Label htmlFor="projectTitle" className="text-white font-medium text-sm">Project Title *</Label>
+                  <Label htmlFor="projectTitle" className="text-white font-medium text-sm">
+                    Project Title *
+                  </Label>
                   <Input
                     id="projectTitle"
                     type="text"
@@ -193,9 +263,12 @@ export function SubmitProposalPage() {
                   />
                 </div>
 
+                {/* Category & Location */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="category" className="text-white font-medium text-sm">Category *</Label>
+                    <Label htmlFor="category" className="text-white font-medium text-sm">
+                      Category *
+                    </Label>
                     <div className="relative">
                       <select
                         id="category"
@@ -203,7 +276,9 @@ export function SubmitProposalPage() {
                         onChange={(e) => handleInputChange("category", e.target.value)}
                         required
                         className="w-full bg-white/5 border border-white/20 text-white rounded-xl px-3 py-2 sm:px-4 sm:py-3 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/40 text-sm sm:text-base h-10 sm:h-12 touch-manipulation appearance-none"
-                        style={{ color: formData.category ? 'white' : 'rgba(255, 255, 255, 0.4)' }}
+                        style={{
+                          color: formData.category ? 'white' : 'rgba(255, 255, 255, 0.4)'
+                        }}
                       >
                         <option value="" disabled className="bg-slate-800 text-white/60">Select category</option>
                         <option value="renewable-energy" className="bg-slate-800 text-white">Renewable Energy</option>
@@ -214,6 +289,7 @@ export function SubmitProposalPage() {
                         <option value="carbon-capture" className="bg-slate-800 text-white">Carbon Capture</option>
                         <option value="climate-education" className="bg-slate-800 text-white">Climate Education</option>
                       </select>
+                      {/* Custom dropdown arrow */}
                       <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                         <svg className="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -223,7 +299,9 @@ export function SubmitProposalPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="location" className="text-white font-medium text-sm">Location *</Label>
+                    <Label htmlFor="location" className="text-white font-medium text-sm">
+                      Location *
+                    </Label>
                     <Input
                       id="location"
                       type="text"
@@ -236,8 +314,11 @@ export function SubmitProposalPage() {
                   </div>
                 </div>
 
+                {/* Project Description */}
                 <div className="space-y-2">
-                  <Label htmlFor="description" className="text-white font-medium text-sm">Project Description *</Label>
+                  <Label htmlFor="description" className="text-white font-medium text-sm">
+                    Project Description *
+                  </Label>
                   <Textarea
                     id="description"
                     placeholder="Describe your project in detail, including objectives, methodology, and timeline..."
@@ -247,11 +328,16 @@ export function SubmitProposalPage() {
                     rows={4}
                     className="bg-white/5 border-white/20 text-white placeholder-white/40 focus:border-white/40 focus:ring-white/20 rounded-xl text-sm sm:text-base resize-none"
                   />
-                  <p className="text-white/60 text-xs">{formData.description.length}/1000 characters</p>
+                  <p className="text-white/60 text-xs">
+                    {formData.description.length}/1000 characters
+                  </p>
                 </div>
 
+                {/* Expected Impact */}
                 <div className="space-y-2">
-                  <Label htmlFor="expectedImpact" className="text-white font-medium text-sm">Expected Climate Impact *</Label>
+                  <Label htmlFor="expectedImpact" className="text-white font-medium text-sm">
+                    Expected Climate Impact *
+                  </Label>
                   <Textarea
                     id="expectedImpact"
                     placeholder="Quantify the expected environmental benefits (e.g., CO2 reduction, people impacted, area covered)..."
@@ -263,9 +349,12 @@ export function SubmitProposalPage() {
                   />
                 </div>
 
+                {/* Funding Amount & Duration */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="fundingAmount" className="text-white font-medium text-sm">Funding Requested (USD) *</Label>
+                    <Label htmlFor="fundingAmount" className="text-white font-medium text-sm">
+                      Funding Requested (USD) *
+                    </Label>
                     <div className="relative">
                       <DollarSignIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
                       <Input
@@ -281,7 +370,9 @@ export function SubmitProposalPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="duration" className="text-white font-medium text-sm">Project Duration</Label>
+                    <Label htmlFor="duration" className="text-white font-medium text-sm">
+                      Project Duration
+                    </Label>
                     <div className="relative">
                       <select
                         id="duration"
@@ -307,22 +398,19 @@ export function SubmitProposalPage() {
                   </div>
                 </div>
 
-                {/* Info note about milestones */}
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3">
-                  <p className="text-blue-300 text-xs">
-                    💡 Funding milestones are defined <strong>after</strong> the community votes and approves your proposal. Once approved, you will be able to set up milestone stages for sequential fund release.
-                  </p>
-                </div>
-
-                <TransactionCostEstimate
+                {/* Transaction Cost Estimate */}
+                <TransactionCostEstimate 
                   numTransactions={1}
                   className="bg-white/5 border-white/10 rounded-xl p-3 sm:p-4"
                 />
 
+                {/* Submit Button */}
                 <div className="pt-4">
                   {!isConnected ? (
                     <div className="space-y-3">
-                      <p className="text-center text-red-400 text-sm">Please connect your wallet to submit a proposal</p>
+                      <p className="text-center text-red-400 text-sm">
+                        Please connect your wallet to submit a proposal
+                      </p>
                       <Button
                         type="button"
                         onClick={() => router.push('/connect-wallet')}
@@ -352,12 +440,16 @@ export function SubmitProposalPage() {
                   )}
                 </div>
 
-                <p className="text-white/60 text-xs text-center">* Required fields</p>
+                {/* Required Fields Note */}
+                <p className="text-white/60 text-xs text-center">
+                  * Required fields
+                </p>
 
               </form>
             </CardContent>
           </Card>
 
+          {/* Tips Card */}
           <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-2xl">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-white text-base sm:text-lg">💡 Proposal Tips</CardTitle>
@@ -374,11 +466,11 @@ export function SubmitProposalPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-400 mt-1">•</span>
-                  <span>Proposals undergo community voting — engagement with voters increases success rate</span>
+                  <span>Proposals undergo community voting - engagement with voters increases success rate</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-400 mt-1">•</span>
-                  <span>Once approved, you define milestones and funds are released sequentially per milestone</span>
+                  <span>All transactions are recorded on Algorand blockchain for transparency</span>
                 </li>
               </ul>
             </CardContent>

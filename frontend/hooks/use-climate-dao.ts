@@ -339,12 +339,10 @@ export function useClimateDAO() {
   /**
    * Get proposal details from blockchain by ID
    */
-  const getProposal = useCallback(async (proposalId: number): Promise<BlockchainProposal | null> => {
+  const getProposal = useCallback(async (proposalId: number): Promise<any | null> => {
     try {
       setLoading(true);
       setError(null);
-      
-      // Fetch real proposal data from blockchain
       const proposal = await climateDAOQuery.getProposal(proposalId);
       return proposal;
     } catch (err) {

@@ -190,7 +190,7 @@ export default function VotePage() {
   ];
 
   return (
-    <WalletGuard requireBalance={0.001}>
+    <>
       {/* Funding popup */}
       {fundingPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setFundingPopup(null)}>
@@ -501,6 +501,6 @@ export default function VotePage() {
           © {new Date().getFullYear()} EcoNexus · Decentralized climate governance
         </footer>
       </div>
-    </WalletGuard>
+    </>
   );
 }

@@ -17,10 +17,8 @@ export interface BlockchainProposal {
   endTime: number;
   category: string;
   aiScore?: number;
-  aiReview?: any;
-  milestones?: any[];
   creationTime: number;
-  preservedBy?: string[];
+  preservedBy?: string[]; // addresses for whom this proposal should be preserved
 }
 
 export interface BlockchainStats {
@@ -403,13 +401,13 @@ export class ClimateDAOQueryService {
     }
   }
 
-  async getProposal(proposalId: number): Promise<BlockchainProposal | null> {
+  async getProposal(proposalId: number): Promise<any | null> {
     try {
       const response = await fetch(`/api/proposals/${proposalId}`);
       if (response.ok) {
         const proposal = await response.json();
         if (proposal && proposal.id) {
-          return proposal as BlockchainProposal;
+          return proposal;
         }
       }
     } catch (error) {

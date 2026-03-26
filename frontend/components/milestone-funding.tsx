@@ -34,7 +34,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [pera] = useState(() => typeof window !== "undefined" ? new PeraWalletConnect() : null)
 
   const isProposer = address === proposalCreator
-  const voteThreshold = memberCount > 1 ? memberCount - 1 : 1
+  const isTreasury = address === TREASURY
+  const voteThreshold = memberCount > 1 ? memberCount - 1 : 1 // all non-proposer members must vote
 
   useEffect(() => {
     if (initialMilestones?.length) setMilestones(initialMilestones)
@@ -123,7 +124,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
         const newNo = vote === "against" ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
         const total = newYes + newNo
         const allVoted = total >= threshold
-        const newStatus = allVoted && newNo === 0 ? "completed" : allVoted && newNo > 0 ? "failed" : m.status
+        // all must vote AND all must approve — any single reject = failed
+        const newStatus = allVoted && newNo === 0 ? "completed" : newNo > 0 ? "failed" : m.status
         return { ...m, voteYes: newYes, voteNo: newNo, status: newStatus }
       })
       await fetch("/api/milestone-votes", {
@@ -324,11 +326,14 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                       )}
                       {myVote && (
                         <p className={`text-xs ${myVote === "for" ? "text-green-400/70" : "text-red-400/70"}`}>
-                          ✓ You voted {myVote === "for" ? "Approve" : "Reject"} ({totalVotes}/{voteThreshold})
+                          ✓ You voted {myVote === "for" ? "Approve" : "Reject"} — {totalVotes}/{voteThreshold} members voted
                         </p>
                       )}
+                      {!myVote && !isProposer && !!address && (
+                        <p className="text-white/30 text-xs">{totalVotes}/{voteThreshold} members voted · all must approve</p>
+                      )}
                       {isProposer && (
-                        <p className="text-yellow-400/70 text-xs">⏳ Waiting for community to review your proof ({totalVotes}/{voteThreshold})</p>
+                        <p className="text-yellow-400/70 text-xs">⏳ Waiting for all community members to approve ({totalVotes}/{voteThreshold})</p>
                       )}
                     </div>
                   )}
