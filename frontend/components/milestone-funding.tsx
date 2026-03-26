@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge"
 import { ChevronRightIcon, CoinsIcon } from "lucide-react"
 import { useWalletContext } from "@/hooks/use-wallet"
 import algosdk from "algosdk"
-import { PeraWalletConnect } from "@perawallet/connect"
 
 const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET!
 const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
@@ -20,7 +19,7 @@ interface MilestoneFundingProps {
 }
 
 export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, initialMilestones }: MilestoneFundingProps) {
-  const { address } = useWalletContext()
+  const { address, signTransaction } = useWalletContext()
   const [milestones, setMilestones] = useState<any[]>(initialMilestones || [])
   const [memberCount, setMemberCount] = useState(0)
   const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null)
@@ -31,10 +30,9 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [myVotes, setMyVotes] = useState<Record<number, "for" | "against">>({})
   const [proofInputs, setProofInputs] = useState<Record<number, string>>({})
   const [submittingProof, setSubmittingProof] = useState<number | null>(null)
-  const [pera] = useState(() => typeof window !== "undefined" ? new PeraWalletConnect() : null)
+
 
   const isProposer = address === proposalCreator
-  const isTreasury = address === TREASURY
   const voteThreshold = memberCount > 1 ? memberCount - 1 : 1 // all non-proposer members must vote
 
   useEffect(() => {
@@ -106,39 +104,52 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     if (!address || isProposer) return
     setVotingIdx(milestoneIdx)
     try {
-      const [pRes, mRes] = await Promise.all([
-        fetch(`/api/proposals/${proposalId}`),
-        fetch("/api/members"),
-      ])
-      const fresh = await pRes.json()
-      const freshMilestones = fresh.milestones || []
-      let threshold = voteThreshold
-      if (mRes.ok) {
-        const md = await mRes.json()
-        const eligible = (md.members || []).map((m: any) => m.address).filter((a: string) => a !== proposalCreator)
-        threshold = eligible.length > 0 ? eligible.length : 1
-      }
-      const updated = freshMilestones.map((m: any, i: number) => {
-        if (i !== milestoneIdx) return m
-        const newYes = vote === "for" ? (m.voteYes || 0) + 1 : (m.voteYes || 0)
-        const newNo = vote === "against" ? (m.voteNo || 0) + 1 : (m.voteNo || 0)
-        const total = newYes + newNo
-        const allVoted = total >= threshold
-        // all must vote AND all must approve — any single reject = failed
-        const newStatus = allVoted && newNo === 0 ? "completed" : newNo > 0 ? "failed" : m.status
-        return { ...m, voteYes: newYes, voteNo: newNo, status: newStatus }
-      })
-      await fetch("/api/milestone-votes", {
+      // 1. Save vote to DB first
+      const voteRes = await fetch("/api/milestone-votes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proposalId, milestoneIdx, voterAddress: address, vote }),
       })
-      const res = await fetch("/api/proposals", {
+      if (!voteRes.ok) throw new Error("Failed to record vote")
+
+      // 2. Fetch fresh milestone votes count + member count from DB
+      const [allVotesRes, mRes, pRes] = await Promise.all([
+        fetch(`/api/milestone-votes?proposalId=${proposalId}`),
+        fetch("/api/members"),
+        fetch(`/api/proposals/${proposalId}`),
+      ])
+      const allVotesData = await allVotesRes.json()
+      const fresh = await pRes.json()
+      const freshMilestones = fresh.milestones || []
+
+      // Count votes for this milestone from DB (source of truth)
+      const milestoneVotes = (allVotesData.votes || []).filter((v: any) => v.milestone_idx === milestoneIdx)
+      const dbYes = milestoneVotes.filter((v: any) => v.vote === "for").length
+      const dbNo = milestoneVotes.filter((v: any) => v.vote === "against").length
+      const dbTotal = dbYes + dbNo
+
+      let threshold = 1
+      if (mRes.ok) {
+        const md = await mRes.json()
+        const eligible = (md.members || []).filter((m: any) => m.address !== proposalCreator)
+        threshold = eligible.length > 0 ? eligible.length : 1
+      }
+
+      const allVoted = dbTotal >= threshold
+      // any reject = failed immediately; all voted + all yes = completed
+      const newStatus = dbNo > 0 ? "failed" : allVoted && dbNo === 0 ? "completed" : freshMilestones[milestoneIdx]?.status
+
+      const updated = freshMilestones.map((m: any, i: number) =>
+        i !== milestoneIdx ? m : { ...m, voteYes: dbYes, voteNo: dbNo, status: newStatus }
+      )
+
+      await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: proposalId, milestones: updated }),
       })
-      if (res.ok) { setMilestones(updated); setMyVotes(prev => ({ ...prev, [milestoneIdx]: vote })) }
+      setMilestones(updated)
+      setMyVotes(prev => ({ ...prev, [milestoneIdx]: vote }))
     } catch (err: any) {
       alert(`Vote failed: ${err.message}`)
     } finally {
@@ -148,16 +159,9 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
 
   // Proposer releases funds after community approves proof
   const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
-    if (!pera) return
+    if (!address || !signTransaction) return
     setReleasingIdx(milestoneIdx)
     try {
-      let accounts: string[] = []
-      try { accounts = await pera.reconnectSession() } catch {}
-      if (!accounts.includes(TREASURY)) accounts = await pera.connect()
-      if (!accounts.includes(TREASURY)) {
-        alert(`Please import the treasury wallet into Pera.\n\nTreasury: ${TREASURY}`)
-        return
-      }
       const params = await algodClient.getTransactionParams().do()
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
         sender: TREASURY,
@@ -166,8 +170,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
         suggestedParams: params,
         note: new Uint8Array(Buffer.from(`EcoNexus milestone ${milestoneIdx + 1} release`)),
       })
-      const signedTxns = await pera.signTransaction([[{ txn, signers: [TREASURY] }]])
-      const sendRes = await algodClient.sendRawTransaction(signedTxns[0]).do()
+      const signed = await signTransaction(txn)
+      const sendRes = await algodClient.sendRawTransaction(signed).do()
       const txId = sendRes.txid || sendRes.txId || String(sendRes)
       await algosdk.waitForConfirmation(algodClient, txId, 10)
 
