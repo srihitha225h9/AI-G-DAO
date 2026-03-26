@@ -40,6 +40,9 @@ async function ensureTables() {
     );
     ALTER TABLE proposals ADD COLUMN IF NOT EXISTS ai_review jsonb DEFAULT NULL;
     ALTER TABLE proposals ADD COLUMN IF NOT EXISTS milestones jsonb DEFAULT NULL;
+    ALTER TABLE proposals ADD COLUMN IF NOT EXISTS location text DEFAULT NULL;
+    ALTER TABLE proposals ADD COLUMN IF NOT EXISTS latitude numeric DEFAULT NULL;
+    ALTER TABLE proposals ADD COLUMN IF NOT EXISTS longitude numeric DEFAULT NULL;
   `);
 }
 
@@ -58,6 +61,9 @@ function mapRow(row: any) {
     aiScore: Number(row.ai_score),
     aiReview: row.ai_review || null,
     milestones: row.milestones || null,
+    location: row.location || null,
+    latitude: row.latitude ? Number(row.latitude) : null,
+    longitude: row.longitude ? Number(row.longitude) : null,
     creationTime: Number(row.creation_time),
   };
 }
@@ -92,13 +98,14 @@ export async function POST(req: NextRequest) {
     await ensureTables();
     const body = await req.json();
     await pool.query(
-      `INSERT INTO proposals (id, title, description, creator, funding_amount, vote_yes, vote_no, status, end_time, category, ai_score, milestones, creation_time)
-       VALUES ($1,$2,$3,$4,$5,0,0,'active',$6,$7,$8,$9,$10)
+      `INSERT INTO proposals (id, title, description, creator, funding_amount, vote_yes, vote_no, status, end_time, category, ai_score, milestones, location, latitude, longitude, creation_time)
+       VALUES ($1,$2,$3,$4,$5,0,0,'active',$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (id) DO NOTHING`,
       [body.id, body.title, body.description, body.creator, body.fundingAmount,
        body.endTime, body.category, body.aiScore || 0,
        body.milestones ? JSON.stringify(body.milestones) : null,
-       body.creationTime || Date.now()]
+       body.creationTime || Date.now(),
+       body.location || null, body.latitude || null, body.longitude || null]
     );
     // Upsert reputation: increment proposals_submitted
     if (body.creator) {
