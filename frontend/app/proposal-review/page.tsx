@@ -126,7 +126,7 @@ export default function ProposalReviewPage() {
   }
 
   return (
-    <WalletGuard requireBalance={0.05}>
+    <>
       <div className="relative flex flex-col min-h-[100dvh] text-white overflow-hidden">
       {/* Blue Gradient Background */}
       <div className="fixed inset-0 z-0">
@@ -303,6 +303,6 @@ export default function ProposalReviewPage() {
         </div>
       </main>
     </div>
-    </WalletGuard>
+    </>
   )
 }

@@ -137,7 +137,7 @@ export function SubmitProposalPage() {
         console.warn('Failed to store proposal draft:', err)
       }
 
-      router.push('/proposal-review')
+      router.push('/vote')
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
