@@ -79,6 +79,8 @@ export default function VotePage() {
 
   const loadProposals = useCallback(async () => {
     try {
+      // Always fetch fresh from DB, clear localStorage cache first
+      localStorage.removeItem('climate_dao_proposals')
       const all = await getProposals();
 
       // Auto-evaluate and persist updated statuses

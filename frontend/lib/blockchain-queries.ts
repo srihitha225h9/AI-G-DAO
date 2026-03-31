@@ -266,9 +266,14 @@ export class ClimateDAOQueryService {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(proposalData),
         });
-        if (!res.ok) console.error('Neon proposals insert error:', await res.text());
+        if (!res.ok) {
+          const errText = await res.text()
+          console.error('Neon proposals insert error:', errText)
+          throw new Error('Failed to save proposal to database')
+        }
       } catch (err) {
         console.error('Neon proposals insert failed:', err);
+        throw err
       }
 
       // Also cache locally
