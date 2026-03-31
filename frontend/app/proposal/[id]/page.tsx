@@ -200,14 +200,14 @@ export default function ProposalDetailPage() {
     if (!proposal) return
     const totalPercent = draftMilestones.reduce((s, m) => s + m.percent, 0)
     if (totalPercent !== 100) { alert('Percentages must add up to 100%'); return }
-    if (draftMilestones.some(m => !m.title.trim())) { alert('Please fill in all milestone titles'); return }
+    if (draftMilestones.some(m => !m.title.trim())) { alert('Please describe all milestones'); return }
     setSavingMilestones(true)
     try {
       // Milestone 0 starts active, rest locked — sequential unlock
       const milestones = draftMilestones.map((m, i) => ({
         id: i + 1,
         title: m.title,
-        description: m.description,
+        description: m.title,
         fundingPercent: m.percent,
         status: i === 0 ? 'active' : 'locked',
         voteYes: 0,
@@ -448,17 +448,11 @@ export default function ProposalDetailPage() {
                                     <span className="text-white/40 text-xs">%</span>
                                   </div>
                                 </div>
-                                <input
-                                  placeholder={['e.g. Purchase equipment & permits', 'e.g. Installation & setup complete', 'e.g. System operational & tested'][i]}
+                                <textarea
+                                  placeholder={['Describe what you will do in this phase (e.g. Purchase equipment, get permits, set up site...)', 'Describe what you will do in this phase (e.g. Install systems, complete setup, run tests...)', 'Describe what you will do in this phase (e.g. Full deployment, monitoring, final report...)'][i]}
                                   value={m.title}
                                   onChange={e => setDraftMilestones(prev => prev.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
-                                  className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/30"
-                                />
-                                <textarea
-                                  placeholder="What will be accomplished in this phase?"
-                                  value={m.description}
-                                  onChange={e => setDraftMilestones(prev => prev.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
-                                  rows={2}
+                                  rows={3}
                                   className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-white/30"
                                 />
                               </div>
