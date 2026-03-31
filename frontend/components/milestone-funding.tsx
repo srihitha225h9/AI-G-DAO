@@ -30,6 +30,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [myVotes, setMyVotes] = useState<Record<number, "for" | "against">>({})
   const [proofInputs, setProofInputs] = useState<Record<number, string>>({})
   const [submittingProof, setSubmittingProof] = useState<number | null>(null)
+  const [usageProofInputs, setUsageProofInputs] = useState<Record<number, string>>({})
+  const [submittingUsageProof, setSubmittingUsageProof] = useState<number | null>(null)
 
 
   const isProposer = address === proposalCreator
@@ -218,8 +220,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       const pRes = await fetch(`/api/proposals/${proposalId}`)
       const freshP = await pRes.json()
       const finalMilestones = (freshP.milestones || []).map((m: any, i: number) => {
-        if (i === milestoneIdx) return { ...m, status: "released" }
-        if (i === milestoneIdx + 1 && m.status === "locked") return { ...m, status: "active" }
+        if (i === milestoneIdx) return { ...m, status: "released_pending_usage", txId }
         return m
       })
       await fetch("/api/proposals", {
@@ -240,6 +241,54 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       alert(`Release failed: ${err.message}`)
     } finally {
       setReleasingIdx(null)
+    }
+  }
+
+  // Proposer submits proof of how released funds were used
+  const handleSubmitUsageProof = async (milestoneIdx: number) => {
+    const proof = usageProofInputs[milestoneIdx]?.trim()
+    if (!proof) return alert("Please describe how the funds were used.")
+    setSubmittingUsageProof(milestoneIdx)
+    try {
+      const pRes = await fetch(`/api/proposals/${proposalId}`)
+      const fresh = await pRes.json()
+      const updated = (fresh.milestones || []).map((m: any, i: number) => {
+        if (i !== milestoneIdx) return m
+        return { ...m, status: "pending_usage_verification", usageProof: proof }
+      })
+      await fetch("/api/proposals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: proposalId, milestones: updated }),
+      })
+      setMilestones(updated)
+      setUsageProofInputs(prev => ({ ...prev, [milestoneIdx]: "" }))
+    } catch (err: any) {
+      alert(`Failed: ${err.message}`)
+    } finally {
+      setSubmittingUsageProof(null)
+    }
+  }
+
+  // Community verifies fund usage — approves unlocks next milestone
+  const handleVerifyUsage = async (milestoneIdx: number, approve: boolean) => {
+    if (!address || isProposer) return
+    try {
+      const pRes = await fetch(`/api/proposals/${proposalId}`)
+      const fresh = await pRes.json()
+      const updated = (fresh.milestones || []).map((m: any, i: number) => {
+        if (i === milestoneIdx) return { ...m, status: approve ? "released" : "usage_rejected" }
+        if (approve && i === milestoneIdx + 1 && m.status === "locked") return { ...m, status: "active" }
+        return m
+      })
+      await fetch("/api/proposals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: proposalId, milestones: updated }),
+      })
+      setMilestones(updated)
+    } catch (err: any) {
+      alert(`Failed: ${err.message}`)
     }
   }
 
@@ -274,6 +323,9 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
             const isLocked = m.status === "locked"
             const isActive = m.status === "active" || m.status === "pending"
             const isPendingProof = m.status === "pending_proof"
+            const isReleasedPendingUsage = m.status === "released_pending_usage"
+            const isPendingUsageVerification = m.status === "pending_usage_verification"
+            const isUsageRejected = m.status === "usage_rejected"
             const voteYes = m.voteYes || 0
             const voteNo = m.voteNo || 0
             const totalVotes = voteYes + voteNo
@@ -281,23 +333,32 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
             // Community votes on proof — only when proof submitted
             const canVote = isPendingProof && !isProposer && !myVote && !!address
 
-            const statusLabel = isReleased ? "💸 Released"
+            const statusLabel = isReleased ? "✅ Complete"
+              : isPendingUsageVerification ? "🔍 Usage Under Review"
+              : isReleasedPendingUsage ? "💸 Funds Released"
               : isCompleted ? "✅ Approved"
               : isFailed ? "✗ Rejected"
+              : isUsageRejected ? "⚠️ Usage Rejected"
               : isLocked ? "🔒 Locked"
               : isPendingProof ? "📋 Proof Submitted"
               : "⏳ Active"
 
-            const statusColor = isReleased ? "bg-purple-500/20 text-purple-400 border-purple-500/30"
+            const statusColor = isReleased ? "bg-green-500/20 text-green-400 border-green-500/30"
+              : isPendingUsageVerification ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+              : isReleasedPendingUsage ? "bg-purple-500/20 text-purple-400 border-purple-500/30"
               : isCompleted ? "bg-green-500/20 text-green-400 border-green-500/30"
               : isFailed ? "bg-red-500/20 text-red-400 border-red-500/30"
+              : isUsageRejected ? "bg-orange-500/20 text-orange-400 border-orange-500/30"
               : isLocked ? "bg-white/5 text-white/30 border-white/10"
               : isPendingProof ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
               : "bg-blue-500/20 text-blue-400 border-blue-500/30"
 
-            const cardBg = isReleased ? "bg-purple-500/5 border-purple-500/20"
+            const cardBg = isReleased ? "bg-green-500/5 border-green-500/20"
+              : isPendingUsageVerification ? "bg-blue-500/5 border-blue-500/20"
+              : isReleasedPendingUsage ? "bg-purple-500/5 border-purple-500/20"
               : isCompleted ? "bg-green-500/5 border-green-500/20"
               : isFailed ? "bg-red-500/5 border-red-500/20"
+              : isUsageRejected ? "bg-orange-500/5 border-orange-500/20"
               : isLocked ? "bg-white/5 border-white/5 opacity-50"
               : isPendingProof ? "bg-yellow-500/5 border-yellow-500/20"
               : "bg-white/5 border-white/10"
@@ -411,12 +472,76 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                     </div>
                   )}
 
+                  {/* STEP 4: Funds released — proposer submits usage proof */}
+                  {isReleasedPendingUsage && isProposer && (
+                    <div className="pl-8 space-y-2 pt-1">
+                      <p className="text-purple-300 text-xs font-medium">💸 Funds received! Now show the community how you used them:</p>
+                      <textarea
+                        placeholder="Describe how the funds were used (receipts, invoices, transaction IDs, photos of purchases...)"
+                        value={usageProofInputs[i] || ""}
+                        onChange={e => setUsageProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
+                        rows={3}
+                        className="w-full bg-white/5 border border-purple-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-purple-500/40"
+                      />
+                      <Button size="sm" onClick={() => handleSubmitUsageProof(i)} disabled={submittingUsageProof === i}
+                        className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
+                        {submittingUsageProof === i ? "Submitting..." : "📤 Submit Fund Usage Proof"}
+                      </Button>
+                    </div>
+                  )}
+
+                  {isReleasedPendingUsage && !isProposer && (
+                    <p className="text-purple-400/70 text-xs pl-8">⏳ Waiting for proposer to submit fund usage proof...</p>
+                  )}
+
+                  {/* STEP 5: Usage proof submitted — community verifies */}
+                  {isPendingUsageVerification && (
+                    <div className="pl-8 space-y-2 pt-1">
+                      <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+                        <p className="text-blue-400 text-xs font-medium mb-1">🔍 Fund usage proof submitted:</p>
+                        <p className="text-white/70 text-xs">{m.usageProof}</p>
+                      </div>
+                      {!isProposer && !!address && (
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => handleVerifyUsage(i, true)}
+                            className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-xl h-8 text-xs">
+                            ✓ Verify & Unlock Next
+                          </Button>
+                          <Button size="sm" onClick={() => handleVerifyUsage(i, false)}
+                            className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl h-8 text-xs">
+                            ✗ Reject Usage
+                          </Button>
+                        </div>
+                      )}
+                      {isProposer && (
+                        <p className="text-blue-400/70 text-xs">⏳ Waiting for community to verify fund usage...</p>
+                      )}
+                    </div>
+                  )}
+
+                  {isUsageRejected && isProposer && (
+                    <div className="pl-8 space-y-2 pt-1">
+                      <p className="text-orange-400/70 text-xs">⚠️ Fund usage proof rejected. Resubmit with more evidence:</p>
+                      <textarea
+                        placeholder="Provide clearer evidence of fund usage..."
+                        value={usageProofInputs[i] || ""}
+                        onChange={e => setUsageProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
+                        rows={2}
+                        className="w-full bg-white/5 border border-orange-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none"
+                      />
+                      <Button size="sm" onClick={() => handleSubmitUsageProof(i)} disabled={submittingUsageProof === i}
+                        className="bg-orange-600/50 hover:bg-orange-600 text-white rounded-xl h-8 text-xs px-4">
+                        {submittingUsageProof === i ? "Submitting..." : "📤 Resubmit Usage Proof"}
+                      </Button>
+                    </div>
+                  )}
+
                   {isLocked && (
-                    <p className="text-xs text-white/30 pl-8">🔒 Unlocks after Milestone {i} funds are released</p>
+                    <p className="text-xs text-white/30 pl-8">🔒 Unlocks after previous milestone funds are verified</p>
                   )}
 
                   {isReleased && (
-                    <p className="text-xs text-purple-400/70 pl-8">💸 {amountAlgo} ALGO released to proposer</p>
+                    <p className="text-green-400/70 text-xs pl-8">✅ Milestone fully complete — funds verified & next milestone unlocked</p>
                   )}
                 </div>
 
