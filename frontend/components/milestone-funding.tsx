@@ -108,8 +108,16 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
 
   useEffect(() => {
     fetchMyVotes(); fetchBackground()
-    const interval = setInterval(() => { fetchBackground(); fetchMyVotes() }, 5000)
-    return () => clearInterval(interval)
+    const interval = setInterval(() => { fetchBackground(); fetchMyVotes() }, 3000)
+    // Refresh immediately when user switches back to this tab
+    const onFocus = () => { fetchBackground(); fetchMyVotes() }
+    window.addEventListener('visibilitychange', onFocus)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('visibilitychange', onFocus)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [fetchBackground, fetchMyVotes])
 
   useEffect(() => { setMyVotes({}); fetchMyVotes() }, [address, fetchMyVotes])

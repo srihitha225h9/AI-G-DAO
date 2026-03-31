@@ -130,6 +130,15 @@ export default function ProposalDetailPage() {
       }
     }
     load()
+    const interval = setInterval(load, 5000)
+    const onFocus = () => load()
+    window.addEventListener('visibilitychange', onFocus)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('visibilitychange', onFocus)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [proposalId])
 
   const handleMilestoneVote = async (milestoneIdx: number, vote: 'for' | 'against') => {
