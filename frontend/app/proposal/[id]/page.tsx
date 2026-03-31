@@ -395,47 +395,86 @@ export default function ProposalDetailPage() {
                     {showMilestoneForm && (
                       <Card className="bg-white/5 border border-yellow-500/20 rounded-2xl">
                         <CardContent className="p-4 space-y-4">
-                          <p className="text-white/70 text-xs">Split your ${proposal.fundingAmount.toLocaleString()} into 3 stages. Describe what will be done in each stage.</p>
-                          <div className="flex gap-1 flex-wrap">
-                            {[[33,34,33],[30,40,30],[25,50,25],[50,30,20]].map(vals => (
-                              <button key={vals.join()} type="button"
-                                onClick={() => setDraftMilestones(prev => prev.map((m,i) => ({ ...m, percent: vals[i] })))}
-                                className="text-xs px-2 py-1 rounded-lg bg-white/5 border border-white/15 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
-                              >{vals.join('% / ')}%</button>
-                            ))}
+                          <div className="flex items-center justify-between">
+                            <p className="text-white/70 text-xs">Define how to split ${proposal.fundingAmount.toLocaleString()} across 3 milestones.</p>
+                            {/* Live total indicator */}
+                            {(() => {
+                              const total = draftMilestones.reduce((s, m) => s + m.percent, 0)
+                              return (
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${
+                                  total === 100 ? 'bg-green-500/20 text-green-400' :
+                                  total > 100  ? 'bg-red-500/20 text-red-400' :
+                                  'bg-yellow-500/20 text-yellow-400'
+                                }`}>
+                                  {total}/100%
+                                </span>
+                              )
+                            })()}
                           </div>
+
+                          {/* Visual split bar */}
+                          {(() => {
+                            const colors = ['bg-blue-500', 'bg-purple-500', 'bg-green-500']
+                            const total = draftMilestones.reduce((s, m) => s + m.percent, 0)
+                            return (
+                              <div className="h-3 bg-white/10 rounded-full overflow-hidden flex">
+                                {draftMilestones.map((m, i) => (
+                                  <div key={i}
+                                    className={`h-full ${colors[i]} transition-all duration-300`}
+                                    style={{ width: `${Math.min(m.percent, 100)}%` }}
+                                  />
+                                ))}
+                              </div>
+                            )
+                          })()}
+
                           {draftMilestones.map((m, i) => {
                             const amt = Math.round((proposal.fundingAmount * m.percent) / 100)
+                            const colors = ['text-blue-300', 'text-purple-300', 'text-green-300']
+                            const bgColors = ['bg-blue-500/30', 'bg-purple-500/30', 'bg-green-500/30']
                             return (
                               <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-3 space-y-2">
                                 <div className="flex items-center gap-2">
-                                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                    i === 0 ? 'bg-blue-500/30 text-blue-300' : i === 1 ? 'bg-purple-500/30 text-purple-300' : 'bg-green-500/30 text-green-300'
-                                  }`}>{i+1}</span>
-                                  <span className="text-white/60 text-xs">Stage {i+1} — {m.percent}% (${amt.toLocaleString()})</span>
-                                  <input type="number" min={1} max={98} value={m.percent}
-                                    onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, percent: Number(e.target.value)} : x))}
-                                    className="ml-auto w-14 bg-white/10 border border-white/20 text-white text-xs rounded-lg px-2 py-1 text-center"
-                                  />
-                                  <span className="text-white/40 text-xs">%</span>
+                                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${bgColors[i]} ${colors[i]}`}>{i+1}</span>
+                                  <span className={`text-xs font-medium ${colors[i]}`}>Milestone {i+1}</span>
+                                  <div className="ml-auto flex items-center gap-1.5">
+                                    <span className="text-white/40 text-xs">${amt.toLocaleString()}</span>
+                                    <input
+                                      type="number" min={1} max={98}
+                                      value={m.percent}
+                                      onChange={e => setDraftMilestones(prev => prev.map((x, j) => j === i ? { ...x, percent: Math.max(1, Math.min(98, Number(e.target.value) || 1)) } : x))}
+                                      className="w-16 bg-white/10 border border-white/20 text-white text-xs rounded-lg px-2 py-1 text-center focus:outline-none focus:border-white/40"
+                                    />
+                                    <span className="text-white/40 text-xs">%</span>
+                                  </div>
                                 </div>
-                                <input placeholder={['e.g. Purchase equipment & permits','e.g. Installation & setup complete','e.g. System operational & tested'][i]}
+                                <input
+                                  placeholder={['e.g. Purchase equipment & permits', 'e.g. Installation & setup complete', 'e.g. System operational & tested'][i]}
                                   value={m.title}
-                                  onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, title: e.target.value} : x))}
+                                  onChange={e => setDraftMilestones(prev => prev.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
                                   className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/30"
                                 />
-                                <textarea placeholder={['What will be accomplished in this phase?','What will be accomplished in this phase?','What will be accomplished in this phase?'][i]}
+                                <textarea
+                                  placeholder="What will be accomplished in this phase?"
                                   value={m.description}
-                                  onChange={e => setDraftMilestones(prev => prev.map((x,j) => j===i ? {...x, description: e.target.value} : x))}
+                                  onChange={e => setDraftMilestones(prev => prev.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
                                   rows={2}
                                   className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-white/30"
                                 />
                               </div>
                             )
                           })}
+
+                          {draftMilestones.reduce((s, m) => s + m.percent, 0) !== 100 && (
+                            <p className="text-yellow-400/70 text-xs text-center">
+                              ⚠️ Percentages must add up to exactly 100% (currently {draftMilestones.reduce((s, m) => s + m.percent, 0)}%)
+                            </p>
+                          )}
+
                           <div className="flex gap-2 pt-1">
                             <Button variant="ghost" onClick={() => setShowMilestoneForm(false)} className="flex-1 text-white/50 hover:text-white border border-white/10 rounded-xl text-sm">Cancel</Button>
-                            <Button onClick={handleSaveMilestones} disabled={savingMilestones} className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm">
+                            <Button onClick={handleSaveMilestones} disabled={savingMilestones || draftMilestones.reduce((s, m) => s + m.percent, 0) !== 100}
+                              className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-xl text-sm">
                               {savingMilestones ? 'Saving...' : '✓ Submit Milestones'}
                             </Button>
                           </div>
