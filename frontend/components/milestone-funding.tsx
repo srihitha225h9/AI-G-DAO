@@ -540,7 +540,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
 
                   {isFailed && isProposer && (
                     <div className="pl-8 space-y-2 pt-1">
-                      <p className="text-red-400/70 text-xs">✗ Proof rejected. Submit updated proof:</p>
+                      <p className="text-red-400/70 text-xs">✗ Proof rejected. Resubmit with updated proof:</p>
                       <textarea
                         placeholder="Update your proof with more details..."
                         value={proofInputs[i] || ""}
@@ -550,9 +550,29 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                         rows={2}
                         className="w-full bg-white/5 border border-red-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none"
                       />
-                      <Button size="sm" onClick={() => handleSubmitProof(i)} disabled={submittingProof === i}
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/15 rounded-lg hover:bg-white/10 transition-colors">
+                          <span className="text-xs text-white/50">📎 Attach files</span>
+                          <span className="text-xs text-white/30">(photos, videos, receipts, PDFs)</span>
+                        </div>
+                        <input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xlsx,.csv"
+                          className="hidden"
+                          onChange={e => setProofFiles(prev => ({ ...prev, [i]: Array.from(e.target.files || []) }))}
+                        />
+                      </label>
+                      {(proofFiles[i] || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {(proofFiles[i] || []).map((f, fi) => (
+                            <span key={fi} className="text-xs bg-red-500/20 text-red-300 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                              📄 {f.name}
+                              <button type="button" onClick={() => setProofFiles(prev => ({ ...prev, [i]: prev[i].filter((_, j) => j !== fi) }))} className="text-red-400/60 hover:text-red-300">×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <Button size="sm" onClick={() => handleSubmitProof(i)} disabled={submittingProof === i || uploadingFiles[i]}
                         className="bg-red-600/50 hover:bg-red-600 text-white rounded-xl h-8 text-xs px-4">
-                        {submittingProof === i ? "Submitting..." : "📤 Resubmit Proof"}
+                        {uploadingFiles[i] ? "Uploading..." : submittingProof === i ? "Submitting..." : "📤 Resubmit Proof"}
                       </Button>
                     </div>
                   )}
@@ -660,9 +680,29 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                         rows={2}
                         className="w-full bg-white/5 border border-orange-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none"
                       />
-                      <Button size="sm" onClick={() => handleSubmitUsageProof(i)} disabled={submittingUsageProof === i}
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/15 rounded-lg hover:bg-white/10 transition-colors">
+                          <span className="text-xs text-white/50">📎 Attach receipts / invoices</span>
+                          <span className="text-xs text-white/30">(photos, PDFs, screenshots)</span>
+                        </div>
+                        <input type="file" multiple accept="image/*,.pdf,.doc,.docx,.xlsx,.csv"
+                          className="hidden"
+                          onChange={e => setUsageProofFiles(prev => ({ ...prev, [i]: Array.from(e.target.files || []) }))}
+                        />
+                      </label>
+                      {(usageProofFiles[i] || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {(usageProofFiles[i] || []).map((f, fi) => (
+                            <span key={fi} className="text-xs bg-orange-500/20 text-orange-300 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                              📄 {f.name}
+                              <button type="button" onClick={() => setUsageProofFiles(prev => ({ ...prev, [i]: prev[i].filter((_, j) => j !== fi) }))} className="text-orange-400/60 hover:text-orange-300">×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <Button size="sm" onClick={() => handleSubmitUsageProof(i)} disabled={submittingUsageProof === i || uploadingFiles[i]}
                         className="bg-orange-600/50 hover:bg-orange-600 text-white rounded-xl h-8 text-xs px-4">
-                        {submittingUsageProof === i ? "Submitting..." : "📤 Resubmit Usage Proof"}
+                        {uploadingFiles[i] ? "Uploading..." : submittingUsageProof === i ? "Submitting..." : "📤 Resubmit Usage Proof"}
                       </Button>
                     </div>
                   )}
