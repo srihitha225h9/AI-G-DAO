@@ -429,6 +429,18 @@ export class ClimateDAOQueryService {
       const response = await fetch('/api/proposals');
       if (response.ok) {
         let proposals = (await response.json()) as BlockchainProposal[];
+        const localProposals = this.getStoredProposals();
+
+        // Merge any locally cached proposals that may not yet be present in the API results.
+        const remoteIds = new Set(proposals.map((p) => p.id));
+        const mergedProposals = [...proposals];
+        for (const localProposal of localProposals) {
+          if (!remoteIds.has(localProposal.id)) {
+            mergedProposals.push(localProposal);
+          }
+        }
+
+        proposals = mergedProposals.sort((a, b) => b.creationTime - a.creationTime);
 
         if (filter?.status) proposals = proposals.filter(p => p.status === filter.status);
         if (filter?.creator) proposals = proposals.filter(p => p.creator === filter.creator);
