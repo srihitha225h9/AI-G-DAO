@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -36,6 +36,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [proofFiles, setProofFiles] = useState<Record<number, File[]>>({})
   const [usageProofFiles, setUsageProofFiles] = useState<Record<number, File[]>>({})
   const [uploadingFiles, setUploadingFiles] = useState<Record<number, boolean>>({})
+  const isEditing = useRef(false)
 
 
   const isProposer = address === proposalCreator
@@ -79,7 +80,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       if (pRes.ok && allVotesRes.ok) {
         const p = await pRes.json()
         const allVotesData = await allVotesRes.json()
-        if (p.milestones?.length) {
+        if (p.milestones?.length && !isEditing.current) {
           // Recompute voteYes/voteNo/status from DB votes (source of truth)
           const recomputed = p.milestones.map((m: any, i: number) => {
             const mv = (allVotesData.votes || []).filter((v: any) => v.milestone_idx === i)
@@ -427,6 +428,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                       <textarea
                         placeholder="Describe what you completed (links, GitHub commits, reports...)"
                         value={proofInputs[i] || ""}
+                        onFocus={() => { isEditing.current = true }}
+                        onBlur={() => { isEditing.current = false }}
                         onChange={e => setProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
                         rows={2}
                         className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-white/30"
@@ -541,6 +544,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                       <textarea
                         placeholder="Update your proof with more details..."
                         value={proofInputs[i] || ""}
+                        onFocus={() => { isEditing.current = true }}
+                        onBlur={() => { isEditing.current = false }}
                         onChange={e => setProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
                         rows={2}
                         className="w-full bg-white/5 border border-red-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none"
@@ -559,6 +564,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                       <textarea
                         placeholder="Describe how the funds were used (vendor names, what was purchased, amounts spent...)"
                         value={usageProofInputs[i] || ""}
+                        onFocus={() => { isEditing.current = true }}
+                        onBlur={() => { isEditing.current = false }}
                         onChange={e => setUsageProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
                         rows={2}
                         className="w-full bg-white/5 border border-purple-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-purple-500/40"
@@ -647,6 +654,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                       <textarea
                         placeholder="Provide clearer evidence of fund usage..."
                         value={usageProofInputs[i] || ""}
+                        onFocus={() => { isEditing.current = true }}
+                        onBlur={() => { isEditing.current = false }}
                         onChange={e => setUsageProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
                         rows={2}
                         className="w-full bg-white/5 border border-orange-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none"
