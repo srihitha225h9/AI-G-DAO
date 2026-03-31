@@ -33,6 +33,9 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [usageProofInputs, setUsageProofInputs] = useState<Record<number, string>>({})
   const [submittingUsageProof, setSubmittingUsageProof] = useState<number | null>(null)
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null)
+  const [proofFiles, setProofFiles] = useState<Record<number, File[]>>({})
+  const [usageProofFiles, setUsageProofFiles] = useState<Record<number, File[]>>({})
+  const [uploadingFiles, setUploadingFiles] = useState<Record<number, boolean>>({})
 
 
   const isProposer = address === proposalCreator
