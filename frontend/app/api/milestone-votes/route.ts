@@ -33,6 +33,22 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// POST /api/milestone-votes
+export async function POST(req: NextRequest) {
+  try {
+    await ensureTable()
+    const { proposalId, milestoneIdx, voterAddress, vote } = await req.json()
+    await pool.query(
+      `INSERT INTO milestone_votes (proposal_id, milestone_idx, voter_address, vote)
+       VALUES ($1,$2,$3,$4) ON CONFLICT (proposal_id, milestone_idx, voter_address) DO NOTHING`,
+      [proposalId, milestoneIdx, voterAddress, vote]
+    )
+    return NextResponse.json({ success: true })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
 // DELETE /api/milestone-votes?proposalId=X&milestoneIdx=Y
 export async function DELETE(req: NextRequest) {
   try {
@@ -49,19 +65,6 @@ export async function DELETE(req: NextRequest) {
     } else {
       await pool.query('DELETE FROM milestone_votes WHERE proposal_id = $1', [proposalId])
     }
-    return NextResponse.json({ success: true })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
-  }
-}
-  try {
-    await ensureTable()
-    const { proposalId, milestoneIdx, voterAddress, vote } = await req.json()
-    await pool.query(
-      `INSERT INTO milestone_votes (proposal_id, milestone_idx, voter_address, vote)
-       VALUES ($1,$2,$3,$4) ON CONFLICT (proposal_id, milestone_idx, voter_address) DO NOTHING`,
-      [proposalId, milestoneIdx, voterAddress, vote]
-    )
     return NextResponse.json({ success: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
