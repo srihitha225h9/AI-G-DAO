@@ -32,6 +32,9 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [submittingProof, setSubmittingProof] = useState<number | null>(null)
   const [usageProofInputs, setUsageProofInputs] = useState<Record<number, string>>({})
   const [submittingUsageProof, setSubmittingUsageProof] = useState<number | null>(null)
+  const [proofFiles, setProofFiles] = useState<Record<number, File[]>>({})
+  const [usageProofFiles, setUsageProofFiles] = useState<Record<number, File[]>>({})
+  const [uploadingFiles, setUploadingFiles] = useState<Record<number, boolean>>({})
 
 
   const isProposer = address === proposalCreator
@@ -110,18 +113,39 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
 
   useEffect(() => { setMyVotes({}); fetchMyVotes() }, [address, fetchMyVotes])
 
+  // Upload files and return URLs
+  const uploadFiles = async (files: File[], milestoneIdx: number): Promise<string[]> => {
+    if (!files.length) return []
+    setUploadingFiles(prev => ({ ...prev, [milestoneIdx]: true }))
+    try {
+      const urls = await Promise.all(files.map(async (file) => {
+        const fd = new FormData()
+        fd.append('file', file)
+        const res = await fetch('/api/upload', { method: 'POST', body: fd })
+        if (!res.ok) throw new Error(`Failed to upload ${file.name}`)
+        const data = await res.json()
+        return `[${file.name}](${data.url})`
+      }))
+      return urls
+    } finally {
+      setUploadingFiles(prev => ({ ...prev, [milestoneIdx]: false }))
+    }
+  }
+
   // Proposer submits proof after completing milestone work
   const handleSubmitProof = async (milestoneIdx: number) => {
-    const proof = proofInputs[milestoneIdx]?.trim()
-    if (!proof) return alert("Please describe your proof of completion.")
+    const text = proofInputs[milestoneIdx]?.trim()
+    const files = proofFiles[milestoneIdx] || []
+    if (!text && !files.length) return alert("Please add a description or upload at least one file.")
     setSubmittingProof(milestoneIdx)
     try {
+      const fileLinks = await uploadFiles(files, milestoneIdx)
+      const proof = [text, ...fileLinks].filter(Boolean).join('\n')
       const pRes = await fetch(`/api/proposals/${proposalId}`)
       const fresh = await pRes.json()
-      const updated = (fresh.milestones || []).map((m: any, i: number) => {
-        if (i !== milestoneIdx) return m
-        return { ...m, status: "pending_proof", proof }
-      })
+      const updated = (fresh.milestones || []).map((m: any, i: number) =>
+        i !== milestoneIdx ? m : { ...m, status: "pending_proof", proof }
+      )
       await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -129,6 +153,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       })
       setMilestones(updated)
       setProofInputs(prev => ({ ...prev, [milestoneIdx]: "" }))
+      setProofFiles(prev => ({ ...prev, [milestoneIdx]: [] }))
     } catch (err: any) {
       alert(`Failed: ${err.message}`)
     } finally {
@@ -246,16 +271,18 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
 
   // Proposer submits proof of how released funds were used
   const handleSubmitUsageProof = async (milestoneIdx: number) => {
-    const proof = usageProofInputs[milestoneIdx]?.trim()
-    if (!proof) return alert("Please describe how the funds were used.")
+    const text = usageProofInputs[milestoneIdx]?.trim()
+    const files = usageProofFiles[milestoneIdx] || []
+    if (!text && !files.length) return alert("Please add a description or upload at least one file.")
     setSubmittingUsageProof(milestoneIdx)
     try {
+      const fileLinks = await uploadFiles(files, milestoneIdx)
+      const usageProof = [text, ...fileLinks].filter(Boolean).join('\n')
       const pRes = await fetch(`/api/proposals/${proposalId}`)
       const fresh = await pRes.json()
-      const updated = (fresh.milestones || []).map((m: any, i: number) => {
-        if (i !== milestoneIdx) return m
-        return { ...m, status: "pending_usage_verification", usageProof: proof }
-      })
+      const updated = (fresh.milestones || []).map((m: any, i: number) =>
+        i !== milestoneIdx ? m : { ...m, status: "pending_usage_verification", usageProof }
+      )
       await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -263,6 +290,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       })
       setMilestones(updated)
       setUsageProofInputs(prev => ({ ...prev, [milestoneIdx]: "" }))
+      setUsageProofFiles(prev => ({ ...prev, [milestoneIdx]: [] }))
     } catch (err: any) {
       alert(`Failed: ${err.message}`)
     } finally {
@@ -388,15 +416,37 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                     <div className="pl-8 space-y-2 pt-1">
                       <p className="text-blue-300 text-xs font-medium">📝 Complete this milestone then submit your proof:</p>
                       <textarea
-                        placeholder="Describe what you completed (links, photos, invoices, reports...)"
+                        placeholder="Describe what you completed (links, GitHub commits, reports...)"
                         value={proofInputs[i] || ""}
                         onChange={e => setProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
                         rows={2}
                         className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-white/30"
                       />
-                      <Button size="sm" onClick={() => handleSubmitProof(i)} disabled={submittingProof === i}
+                      {/* File upload */}
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/15 rounded-lg hover:bg-white/10 transition-colors">
+                          <span className="text-xs text-white/50">📎 Attach files</span>
+                          <span className="text-xs text-white/30">(photos, videos, receipts, PDFs)</span>
+                        </div>
+                        <input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xlsx,.csv"
+                          className="hidden"
+                          onChange={e => setProofFiles(prev => ({ ...prev, [i]: Array.from(e.target.files || []) }))}
+                        />
+                      </label>
+                      {(proofFiles[i] || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {(proofFiles[i] || []).map((f, fi) => (
+                            <span key={fi} className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                              📄 {f.name}
+                              <button type="button" onClick={() => setProofFiles(prev => ({ ...prev, [i]: prev[i].filter((_, j) => j !== fi) }))} className="text-blue-400/60 hover:text-blue-300">×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <Button size="sm" onClick={() => handleSubmitProof(i)}
+                        disabled={submittingProof === i || uploadingFiles[i]}
                         className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl h-8 text-xs px-4">
-                        {submittingProof === i ? "Submitting..." : "📤 Submit Proof"}
+                        {uploadingFiles[i] ? "Uploading files..." : submittingProof === i ? "Submitting..." : "📤 Submit Proof"}
                       </Button>
                     </div>
                   )}
@@ -408,9 +458,18 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                   {/* STEP 2: Proof submitted — community votes to approve/reject */}
                   {isPendingProof && (
                     <div className="pl-8 space-y-2 pt-1">
-                      <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                      <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 space-y-2">
                         <p className="text-yellow-400 text-xs font-medium mb-1">📋 Proof submitted by proposer:</p>
-                        <p className="text-white/70 text-xs">{m.proof}</p>
+                        {m.proof?.split('\n').map((line: string, li: number) =>
+                          line.startsWith('[') && line.includes('](') ? (
+                            <a key={li} href={line.match(/\((.+)\)/)?.[1]} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 underline">
+                              📄 {line.match(/\[(.+)\]/)?.[1]}
+                            </a>
+                          ) : (
+                            <p key={li} className="text-white/70 text-xs">{line}</p>
+                          )
+                        )}
                       </div>
                       {canVote && (
                         <div className="flex gap-2">
@@ -475,17 +534,38 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                   {/* STEP 4: Funds released — proposer submits usage proof */}
                   {isReleasedPendingUsage && isProposer && (
                     <div className="pl-8 space-y-2 pt-1">
-                      <p className="text-purple-300 text-xs font-medium">💸 Funds received! Now show the community how you used them:</p>
+                      <p className="text-purple-300 text-xs font-medium">💸 Funds received! Show the community how you used them:</p>
                       <textarea
-                        placeholder="Describe how the funds were used (receipts, invoices, transaction IDs, photos of purchases...)"
+                        placeholder="Describe how the funds were used (vendor names, what was purchased, amounts spent...)"
                         value={usageProofInputs[i] || ""}
                         onChange={e => setUsageProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
-                        rows={3}
+                        rows={2}
                         className="w-full bg-white/5 border border-purple-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-purple-500/40"
                       />
-                      <Button size="sm" onClick={() => handleSubmitUsageProof(i)} disabled={submittingUsageProof === i}
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/15 rounded-lg hover:bg-white/10 transition-colors">
+                          <span className="text-xs text-white/50">📎 Attach receipts / invoices</span>
+                          <span className="text-xs text-white/30">(photos, PDFs, screenshots)</span>
+                        </div>
+                        <input type="file" multiple accept="image/*,.pdf,.doc,.docx,.xlsx,.csv"
+                          className="hidden"
+                          onChange={e => setUsageProofFiles(prev => ({ ...prev, [i]: Array.from(e.target.files || []) }))}
+                        />
+                      </label>
+                      {(usageProofFiles[i] || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {(usageProofFiles[i] || []).map((f, fi) => (
+                            <span key={fi} className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                              📄 {f.name}
+                              <button type="button" onClick={() => setUsageProofFiles(prev => ({ ...prev, [i]: prev[i].filter((_, j) => j !== fi) }))} className="text-purple-400/60 hover:text-purple-300">×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <Button size="sm" onClick={() => handleSubmitUsageProof(i)}
+                        disabled={submittingUsageProof === i || uploadingFiles[i]}
                         className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl h-8 text-xs px-4">
-                        {submittingUsageProof === i ? "Submitting..." : "📤 Submit Fund Usage Proof"}
+                        {uploadingFiles[i] ? "Uploading files..." : submittingUsageProof === i ? "Submitting..." : "📤 Submit Fund Usage Proof"}
                       </Button>
                     </div>
                   )}
@@ -497,9 +577,18 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                   {/* STEP 5: Usage proof submitted — community verifies */}
                   {isPendingUsageVerification && (
                     <div className="pl-8 space-y-2 pt-1">
-                      <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+                      <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 space-y-2">
                         <p className="text-blue-400 text-xs font-medium mb-1">🔍 Fund usage proof submitted:</p>
-                        <p className="text-white/70 text-xs">{m.usageProof}</p>
+                        {m.usageProof?.split('\n').map((line: string, li: number) =>
+                          line.startsWith('[') && line.includes('](') ? (
+                            <a key={li} href={line.match(/\((.+)\)/)?.[1]} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 underline">
+                              📄 {line.match(/\[(.+)\]/)?.[1]}
+                            </a>
+                          ) : (
+                            <p key={li} className="text-white/70 text-xs">{line}</p>
+                          )
+                        )}
                       </div>
                       {!isProposer && !!address && (
                         <div className="flex gap-2">
