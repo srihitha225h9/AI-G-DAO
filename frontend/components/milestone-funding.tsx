@@ -111,7 +111,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     fetchMyVotes(); fetchBackground()
     const interval = setInterval(() => { fetchBackground(); fetchMyVotes() }, 3000)
     // Refresh immediately when user switches back to this tab
-    const onFocus = () => { fetchBackground(); fetchMyVotes() }
+    const onFocus = () => { if (!isEditing.current) { fetchBackground(); fetchMyVotes() } }
     window.addEventListener('visibilitychange', onFocus)
     window.addEventListener('focus', onFocus)
     return () => {

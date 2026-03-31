@@ -70,8 +70,8 @@ export default function ProposalDetailPage() {
 
   useEffect(() => {
     if (!proposalId) return
-    const load = async () => {
-      setLoading(true)
+    const load = async (showSpinner = false) => {
+      if (showSpinner) setLoading(true)
       try {
         let p = await getProposal(proposalId)
         if (p?.aiReview) {
@@ -126,12 +126,12 @@ export default function ProposalDetailPage() {
           } catch {}
         }
       } finally {
-        setLoading(false)
+        if (showSpinner) setLoading(false)
       }
     }
-    load()
-    const interval = setInterval(load, 5000)
-    const onFocus = () => load()
+    load(true)
+    const interval = setInterval(() => load(false), 5000)
+    const onFocus = () => load(false)
     window.addEventListener('visibilitychange', onFocus)
     window.addEventListener('focus', onFocus)
     return () => {
