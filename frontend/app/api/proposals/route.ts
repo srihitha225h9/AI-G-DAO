@@ -99,13 +99,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     await pool.query(
       `INSERT INTO proposals (id, title, description, creator, funding_amount, vote_yes, vote_no, status, end_time, category, ai_score, milestones, location, latitude, longitude, creation_time)
-       VALUES ($1,$2,$3,$4,$5,0,0,'active',$6,$7,$8,$9,$10,$11,$12)
+       VALUES ($1,$2,$3,$4,$5,0,0,'active',$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT (id) DO NOTHING`,
       [body.id, body.title, body.description, body.creator, body.fundingAmount,
        body.endTime, body.category, body.aiScore || 0,
        body.milestones ? JSON.stringify(body.milestones) : null,
-       body.creationTime || Date.now(),
-       body.location || null, body.latitude || null, body.longitude || null]
+       body.location || null, body.latitude || null, body.longitude || null,
+       body.creationTime || Date.now()]
     );
     // Upsert reputation: increment proposals_submitted
     if (body.creator) {
