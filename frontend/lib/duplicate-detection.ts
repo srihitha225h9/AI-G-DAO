@@ -7,142 +7,99 @@ export interface ProposalSimilarity {
   reason: string;
 }
 
-/**
- * Check if a proposal is similar to existing ones
- */
+export interface DuplicateCheckResult {
+  isDuplicate: boolean;        // Layer 1: title >80% similar — block
+  similar: ProposalSimilarity[];
+  suggestions: string[];
+  locationWarning: {           // Layer 2: same category + city — warn
+    exists: boolean;
+    proposals: Array<{ id: number; title: string; creator: string }>;
+  };
+}
+
+// Levenshtein distance for accurate string similarity
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1]
+        ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+function titleSimilarity(a: string, b: string): number {
+  const s1 = a.toLowerCase().trim();
+  const s2 = b.toLowerCase().trim();
+  if (s1 === s2) return 100;
+  const dist = levenshtein(s1, s2);
+  const maxLen = Math.max(s1.length, s2.length);
+  return Math.round((1 - dist / maxLen) * 100);
+}
+
+// Extract city from location string (first meaningful word/phrase)
+function extractCity(location: string): string {
+  if (!location) return '';
+  // Take first part before comma, lowercase
+  return location.split(',')[0].toLowerCase().trim();
+}
+
 export async function checkDuplicateProposal(
   title: string,
   description: string,
-  existingProposals: Array<{ id: number; title: string; description: string }>
-): Promise<{ isDuplicate: boolean; similar: ProposalSimilarity[]; suggestions: string[] }> {
-  try {
-    // First, do a simple text-based duplicate check (no AI needed)
-    const similar: ProposalSimilarity[] = [];
-    
+  existingProposals: Array<{ id: number; title: string; description: string; category?: string; location?: string; creator?: string }>,
+  newCategory?: string,
+  newLocation?: string
+): Promise<DuplicateCheckResult> {
+  const similar: ProposalSimilarity[] = [];
+
+  // ── LAYER 1: Title similarity using Levenshtein ──
+  for (const existing of existingProposals) {
+    const sim = titleSimilarity(title, existing.title);
+    if (sim >= 60) {
+      similar.push({
+        id: existing.id,
+        title: existing.title,
+        similarity: sim,
+        reason: sim === 100 ? 'Exact title match' : `${sim}% title similarity`,
+      });
+    }
+  }
+  similar.sort((a, b) => b.similarity - a.similarity);
+  const isDuplicate = similar.some(s => s.similarity >= 80);
+
+  // ── LAYER 2: Same category + same city ──
+  const locationWarning = { exists: false, proposals: [] as Array<{ id: number; title: string; creator: string }> };
+  if (newCategory && newLocation) {
+    const newCity = extractCity(newLocation);
     for (const existing of existingProposals) {
-      // Check for exact title match
-      if (existing.title.toLowerCase().trim() === title.toLowerCase().trim()) {
-        similar.push({
+      if (!existing.category || !existing.location) continue;
+      const sameCategory = existing.category === newCategory;
+      const existingCity = extractCity(existing.location)
+      const sameCity = newCity.length > 2 && existingCity.length > 2 &&
+        (existingCity.includes(newCity) || newCity.includes(existingCity))
+      if (sameCategory && sameCity) {
+        locationWarning.exists = true;
+        locationWarning.proposals.push({
           id: existing.id,
           title: existing.title,
-          similarity: 100,
-          reason: 'Exact title match'
+          creator: existing.creator || '',
         });
-        continue;
-      }
-      
-      // Check for very similar titles (simple word matching)
-      const titleWords = title.toLowerCase().split(/\s+/);
-      const existingWords = existing.title.toLowerCase().split(/\s+/);
-      const commonWords = titleWords.filter(word => 
-        word.length > 3 && existingWords.includes(word)
-      );
-      
-      if (commonWords.length >= Math.min(titleWords.length, existingWords.length) * 0.6) {
-        const similarity = Math.round((commonWords.length / Math.max(titleWords.length, existingWords.length)) * 100);
-        if (similarity > 60) {
-          similar.push({
-            id: existing.id,
-            title: existing.title,
-            similarity,
-            reason: `${commonWords.length} common words: ${commonWords.join(', ')}`
-          });
-        }
       }
     }
-    
-    // If we found duplicates with simple check, return immediately
-    if (similar.length > 0) {
-      const isDuplicate = similar.some(s => s.similarity >= 80);
-      return {
-        isDuplicate,
-        similar: similar.sort((a, b) => b.similarity - a.similarity),
-        suggestions: isDuplicate ? [
-          'Change the project title to make it more unique',
-          'Add specific location or technology details to differentiate',
-          'Focus on a different aspect of the climate issue'
-        ] : []
-      };
-    }
-    
-    // If no simple duplicates found and we have API key, try AI check
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-    if (!apiKey || existingProposals.length === 0) {
-      return { isDuplicate: false, similar: [], suggestions: [] };
-    }
-
-    const prompt = `
-Analyze if this NEW proposal is a duplicate or very similar to existing proposals:
-
-NEW PROPOSAL:
-Title: ${title}
-Description: ${description}
-
-EXISTING PROPOSALS:
-${existingProposals.map((p, i) => `${i + 1}. ID: ${p.id}, Title: ${p.title}, Description: ${p.description.substring(0, 200)}`).join('\n')}
-
-Respond in JSON format:
-{
-  "isDuplicate": <true if >80% similar to any existing proposal>,
-  "similarProposals": [
-    {
-      "id": <proposal id>,
-      "title": "<proposal title>",
-      "similarity": <0-100 percentage>,
-      "reason": "<why it's similar>"
-    }
-  ],
-  "modifications": [
-    "<suggestion 1 to make it unique>",
-    "<suggestion 2 to differentiate it>"
-  ]
-}
-
-Only include proposals with >60% similarity.
-`;
-
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }]
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      console.warn('AI duplicate check failed, using simple text matching only');
-      return { isDuplicate: false, similar: [], suggestions: [] };
-    }
-
-    const data = await response.json();
-    const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!aiResponse) {
-      return { isDuplicate: false, similar: [], suggestions: [] };
-    }
-
-    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return { isDuplicate: false, similar: [], suggestions: [] };
-    }
-
-    const result = JSON.parse(jsonMatch[0]);
-    return {
-      isDuplicate: result.isDuplicate || false,
-      similar: result.similarProposals || [],
-      suggestions: result.modifications || []
-    };
-  } catch (error) {
-    console.error('Duplicate check error:', error);
-    return { isDuplicate: false, similar: [], suggestions: [] };
   }
+
+  return {
+    isDuplicate,
+    similar,
+    locationWarning,
+    suggestions: isDuplicate ? [
+      'Change the project title to make it more unique',
+      'Add specific location or technology details to differentiate',
+      'Focus on a different aspect of the climate issue',
+    ] : [],
+  };
 }

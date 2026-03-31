@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
   VoteIcon, CheckCircleIcon, XCircleIcon, ClockIcon,
-  LeafIcon, WalletIcon, ArrowLeftIcon, CoinsIcon, UsersIcon
+  LeafIcon, WalletIcon, ArrowLeftIcon, CoinsIcon, UsersIcon, FlagIcon
 } from 'lucide-react';
 import { useWalletContext } from '@/hooks/use-wallet';
 import { useClimateDAO } from '@/hooks/use-climate-dao';
@@ -71,6 +71,11 @@ export default function VotePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>('all');
   const [fundingPopup, setFundingPopup] = useState<{ status: 'passed' | 'rejected'; amount: number; title: string } | null>(null);
+  const [flagCounts, setFlagCounts] = useState<Record<number, number>>({});
+  const [myFlags, setMyFlags] = useState<Record<number, boolean>>({});
+  const [flagging, setFlagging] = useState<number | null>(null);
+  const [flagModal, setFlagModal] = useState<{ proposalId: number; title: string } | null>(null);
+  const [flagReason, setFlagReason] = useState('');
 
   const loadProposals = useCallback(async () => {
     try {
@@ -99,6 +104,7 @@ export default function VotePage() {
       localStorage.setItem('climate_dao_proposals', JSON.stringify(merged));
 
       setProposals(updated as Proposal[]);
+      loadFlags(updated.map((p: any) => p.id));
     } catch (err) {
       console.error('Failed to load proposals:', err);
     } finally {
@@ -115,6 +121,47 @@ export default function VotePage() {
       setUserVotes(map);
     } catch {}
   }, [address]);
+
+  const loadFlags = useCallback(async (proposalIds: number[]) => {
+    if (!proposalIds.length) return;
+    try {
+      const results = await Promise.all(
+        proposalIds.map(id =>
+          fetch(`/api/proposal-flags?proposalId=${id}${address ? `&flagger=${encodeURIComponent(address)}` : ''}`)
+            .then(r => r.ok ? r.json() : { count: 0, myFlag: null })
+        )
+      );
+      const counts: Record<number, number> = {};
+      const flags: Record<number, boolean> = {};
+      results.forEach((r, i) => {
+        counts[proposalIds[i]] = r.count || 0;
+        flags[proposalIds[i]] = !!r.myFlag;
+      });
+      setFlagCounts(counts);
+      setMyFlags(flags);
+    } catch {}
+  }, [address]);
+
+  const handleFlag = async (proposalId: number, reason: string) => {
+    if (!address) return;
+    setFlagging(proposalId);
+    try {
+      const res = await fetch('/api/proposal-flags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposalId, flaggerAddress: address, reason }),
+      });
+      const data = await res.json();
+      setFlagCounts(prev => ({ ...prev, [proposalId]: data.flagCount || (prev[proposalId] || 0) + 1 }));
+      setMyFlags(prev => ({ ...prev, [proposalId]: true }));
+      if (data.flagCount >= 3) {
+        setProposals(prev => prev.map(p => p.id === proposalId ? { ...p, status: 'paused' as any } : p));
+      }
+    } catch {}
+    setFlagging(null);
+    setFlagModal(null);
+    setFlagReason('');
+  };
 
   useEffect(() => {
     loadProposals();
@@ -191,6 +238,36 @@ export default function VotePage() {
 
   return (
     <>
+      {/* Layer 3: Flag Modal */}
+      {flagModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setFlagModal(null); setFlagReason(''); }} />
+          <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-2">
+              <FlagIcon className="w-5 h-5 text-red-400" />
+              <h2 className="text-white font-bold">Flag as Duplicate</h2>
+            </div>
+            <p className="text-white/60 text-sm">Flagging: <span className="text-white/80 font-medium">{flagModal.title}</span></p>
+            <textarea
+              placeholder="Briefly explain why this is a duplicate (optional)..."
+              value={flagReason}
+              onChange={e => setFlagReason(e.target.value)}
+              rows={3}
+              className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:border-white/30"
+            />
+            <p className="text-white/30 text-xs">If 3 members flag this proposal it will be paused for review.</p>
+            <div className="flex gap-3">
+              <Button variant="ghost" onClick={() => { setFlagModal(null); setFlagReason(''); }}
+                className="flex-1 border border-white/10 text-white/60 hover:text-white rounded-xl text-sm">Cancel</Button>
+              <Button onClick={() => handleFlag(flagModal.proposalId, flagReason)}
+                disabled={flagging === flagModal.proposalId}
+                className="flex-1 bg-red-600/80 hover:bg-red-600 text-white rounded-xl text-sm">
+                {flagging === flagModal.proposalId ? 'Flagging...' : '🚩 Submit Flag'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Funding popup */}
       {fundingPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setFundingPopup(null)}>
@@ -488,6 +565,35 @@ export default function VotePage() {
                             🔍 View Full Details & AI Analysis
                           </Button>
                         </Link>
+
+                        {/* Layer 3: Flag as duplicate — only for non-proposer connected members */}
+                        {isConnected && !isMyProposal && proposal.status === 'active' && (
+                          <div className="flex items-center justify-between pt-1">
+                            <button
+                              onClick={() => myFlags[proposal.id]
+                                ? null
+                                : setFlagModal({ proposalId: proposal.id, title: proposal.title })
+                              }
+                              disabled={!!myFlags[proposal.id]}
+                              className={`flex items-center gap-1.5 text-xs transition-colors ${
+                                myFlags[proposal.id]
+                                  ? 'text-red-400/50 cursor-default'
+                                  : 'text-white/30 hover:text-red-400 cursor-pointer'
+                              }`}
+                            >
+                              <FlagIcon className="w-3 h-3" />
+                              {myFlags[proposal.id] ? 'Flagged' : 'Flag as Duplicate'}
+                            </button>
+                            {(flagCounts[proposal.id] || 0) > 0 && (
+                              <span className={`text-xs ${
+                                (flagCounts[proposal.id] || 0) >= 3 ? 'text-red-400' : 'text-white/30'
+                              }`}>
+                                {flagCounts[proposal.id]}/3 flags
+                                {(flagCounts[proposal.id] || 0) >= 3 && ' · Paused'}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   );

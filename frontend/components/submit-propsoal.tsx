@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeftIcon, UploadIcon, FileTextIcon, DollarSignIcon, CalendarIcon, LeafIcon } from "lucide-react"
+import { ArrowLeftIcon, UploadIcon, FileTextIcon, DollarSignIcon, CalendarIcon, LeafIcon, AlertTriangleIcon } from "lucide-react"
 import Link from "next/link"
 import { useWalletContext } from "@/hooks/use-wallet"
 import { useClimateDAO } from "@/hooks/use-climate-dao"
@@ -27,78 +27,41 @@ const TransactionCostEstimate = dynamic(() => import("@/components/transaction-s
 
 export function SubmitProposalPage() {
   const { isConnected, address } = useWalletContext()
-  const { submitProposal, loading, error } = useClimateDAO()
+  const { submitProposal, loading } = useClimateDAO()
   const { setLoading } = useLoading()
   const router = useRouter()
 
   const [formData, setFormData] = useState({
-    projectTitle: "",
-    description: "",
-    fundingAmount: "",
-    duration: "",
-    expectedImpact: "",
-    category: "",
-    location: "",
-    latitude: 0,
-    longitude: 0,
+    projectTitle: "", description: "", fundingAmount: "",
+    duration: "", expectedImpact: "", category: "",
+    location: "", latitude: 0, longitude: 0,
   })
 
   const [transactionState, setTransactionState] = useState<{
     status: 'idle' | 'pending' | 'confirmed' | 'failed'
-    txId?: string
-    result?: TransactionResult
-    error?: string
+    txId?: string; result?: TransactionResult; error?: string
   }>({ status: 'idle' })
+
+  // Layer 2 warning modal
+  const [locationWarning, setLocationWarning] = useState<{
+    show: boolean
+    proposals: Array<{ id: number; title: string; creator: string }>
+  }>({ show: false, proposals: [] })
 
   useEffect(() => {
     if (transactionState.status === 'confirmed') {
       setTimeout(() => {
-        setFormData({
-          projectTitle: "", description: "", fundingAmount: "",
-          duration: "", expectedImpact: "", category: "",
-          location: "", latitude: 0, longitude: 0,
-        })
+        setFormData({ projectTitle: "", description: "", fundingAmount: "", duration: "", expectedImpact: "", category: "", location: "", latitude: 0, longitude: 0 })
         setTransactionState({ status: 'idle' })
       }, 3000)
     }
   }, [transactionState.status])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!isConnected) {
-      alert("Please connect your wallet first!")
-      router.push('/connect-wallet')
-      return
-    }
-
-    if (!formData.location) {
-      alert("Please select a location using the search box.")
-      return
-    }
-
-    try {
-      const existingProposals = climateDAOQuery.getStoredProposals()
-      if (existingProposals.length > 0) {
-        const duplicateCheck = await checkDuplicateProposal(
-          formData.projectTitle, formData.description, existingProposals
-        )
-        if (duplicateCheck.isDuplicate || duplicateCheck.similar.length > 0) {
-          const similarTitles = duplicateCheck.similar.map(p => `• ${p.title} (${p.similarity}% similar)\n  Reason: ${p.reason}`).join('\n\n')
-          alert(`⚠️ DUPLICATE PROPOSAL DETECTED\n\nThis proposal is too similar to existing ones!\n\nSimilar proposals:\n${similarTitles}\n\nPlease modify your proposal to make it unique.`)
-          return
-        }
-      }
-    } catch (err) {
-      console.error('Duplicate check failed:', err)
-    }
-
+  const doSubmit = async () => {
     setTransactionState({ status: 'pending' })
     setLoading(true, "Submitting your proposal to the blockchain...")
-
     try {
       const fundingAmountNum = parseInt(formData.fundingAmount) || 0
-
       const result = await submitProposal({
         title: formData.projectTitle,
         description: formData.description,
@@ -111,52 +74,107 @@ export function SubmitProposalPage() {
       } as any)
 
       setTransactionState({ status: 'confirmed', txId: result.txId, result })
-
-      setFormData({
-        projectTitle: "", description: "", fundingAmount: "",
-        duration: "", expectedImpact: "", category: "",
-        location: "", latitude: 0, longitude: 0,
-      })
+      setFormData({ projectTitle: "", description: "", fundingAmount: "", duration: "", expectedImpact: "", category: "", location: "", latitude: 0, longitude: 0 })
 
       try {
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('proposalDraft', JSON.stringify({
-            title: formData.projectTitle,
-            description: formData.description,
-            category: formData.category,
-            fundingAmount: fundingAmountNum,
-            expectedImpact: formData.expectedImpact,
-            location: formData.location,
-            latitude: formData.latitude,
-            longitude: formData.longitude,
-            txId: result.txId,
-            proposalId: (result as any).proposalId || undefined
-          }))
-        }
-      } catch (err) {
-        console.warn('Failed to store proposal draft:', err)
-      }
+        sessionStorage.setItem('proposalDraft', JSON.stringify({
+          title: formData.projectTitle,
+          description: formData.description,
+          category: formData.category,
+          fundingAmount: fundingAmountNum,
+          expectedImpact: formData.expectedImpact,
+          location: formData.location,
+          latitude: formData.latitude,
+          longitude: formData.longitude,
+          txId: result.txId,
+          proposalId: (result as any).proposalId || undefined,
+          duration: formData.duration,
+        }))
+      } catch {}
 
-      router.push(`/proposal-review`)
-
+      router.push('/proposal-review')
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
-      setTransactionState({ status: 'failed', error: errorMessage })
+      setTransactionState({ status: 'failed', error: err instanceof Error ? err.message : 'Unknown error' })
     } finally {
       setLoading(false)
     }
   }
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!isConnected) { alert("Please connect your wallet first!"); router.push('/connect-wallet'); return }
+    if (!formData.location) { alert("Please select a location using the search box."); return }
+
+    try {
+      const existingProposals = climateDAOQuery.getStoredProposals()
+      if (existingProposals.length > 0) {
+        const check = await checkDuplicateProposal(
+          formData.projectTitle, formData.description,
+          existingProposals as any,
+          formData.category, formData.location
+        )
+
+        // Layer 1: block if title ≥80% similar
+        if (check.isDuplicate) {
+          const top = check.similar[0]
+          alert(`❌ Duplicate Proposal Detected\n\nYour title is ${top.similarity}% similar to an existing proposal:\n"${top.title}"\n\nPlease change your title to make it unique.`)
+          return
+        }
+
+        // Layer 2: warn if same category + city
+        if (check.locationWarning.exists) {
+          setLocationWarning({ show: true, proposals: check.locationWarning.proposals })
+          return
+        }
+      }
+    } catch {}
+
+    await doSubmit()
   }
+
+  const handleInputChange = (field: string, value: string) => setFormData(prev => ({ ...prev, [field]: value }))
 
   return (
     <div className="relative flex flex-col min-h-[100dvh] text-black overflow-hidden">
       <div className="fixed inset-0 z-0">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-900 via-blue-800 to-black"></div>
-        <div className="absolute inset-0 bg-black/40"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-900 via-blue-800 to-black" />
+        <div className="absolute inset-0 bg-black/40" />
       </div>
+
+      {/* Layer 2 Warning Modal */}
+      {locationWarning.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 border border-yellow-500/30 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangleIcon className="w-6 h-6 text-yellow-400 shrink-0" />
+              <h2 className="text-white font-bold text-lg">Similar Project Exists in Your Area</h2>
+            </div>
+            <p className="text-white/60 text-sm">
+              There {locationWarning.proposals.length === 1 ? 'is' : 'are'} already <span className="text-yellow-400 font-semibold">{locationWarning.proposals.length}</span> active <span className="text-yellow-400 font-semibold">{formData.category.replace(/-/g, ' ')}</span> project{locationWarning.proposals.length > 1 ? 's' : ''} in your area:
+            </p>
+            <div className="space-y-2">
+              {locationWarning.proposals.map(p => (
+                <div key={p.id} className="bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                  <p className="text-white/80 text-sm font-medium">• {p.title}</p>
+                  <p className="text-white/30 text-xs font-mono">{p.creator.slice(0,8)}...{p.creator.slice(-6)}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-white/40 text-xs">Consider collaborating with the existing proposer or differentiating your approach. You can still submit if your project is genuinely different.</p>
+            <div className="flex gap-3 pt-1">
+              <Button variant="ghost" onClick={() => setLocationWarning({ show: false, proposals: [] })}
+                className="flex-1 border border-white/10 text-white/60 hover:text-white rounded-xl">
+                Cancel
+              </Button>
+              <Button onClick={() => { setLocationWarning({ show: false, proposals: [] }); doSubmit() }}
+                className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded-xl">
+                Submit Anyway
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <header className="relative z-10 flex items-center justify-between p-4 sm:p-6">
         <Link href="/dashboard" className="flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors touch-manipulation">
@@ -180,55 +198,34 @@ export function SubmitProposalPage() {
           </div>
 
           {transactionState.status !== 'idle' && (
-            <TransactionStatus
-              status={transactionState.status}
-              txId={transactionState.txId}
-              result={transactionState.result}
-              error={transactionState.error}
-              onClose={() => setTransactionState({ status: 'idle' })}
-            />
+            <TransactionStatus status={transactionState.status} txId={transactionState.txId}
+              result={transactionState.result} error={transactionState.error}
+              onClose={() => setTransactionState({ status: 'idle' })} />
           )}
 
           <Card className="bg-white/5 backdrop-blur-xl border-white/10 rounded-2xl shadow-2xl">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-white flex items-center gap-2 text-lg sm:text-xl">
-                <FileTextIcon className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
-                Project Details
+                <FileTextIcon className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />Project Details
               </CardTitle>
-              <CardDescription className="text-white/70 text-sm">
-                Provide comprehensive information about your climate impact project
-              </CardDescription>
+              <CardDescription className="text-white/70 text-sm">Provide comprehensive information about your climate impact project</CardDescription>
             </CardHeader>
-
             <CardContent className="p-4 sm:p-6">
               <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
 
-                {/* Project Title */}
                 <div className="space-y-2">
                   <Label htmlFor="projectTitle" className="text-white font-medium text-sm">Project Title *</Label>
-                  <Input
-                    id="projectTitle"
-                    type="text"
-                    placeholder="e.g., Solar Power Installation for Rural Community"
-                    value={formData.projectTitle}
-                    onChange={(e) => handleInputChange("projectTitle", e.target.value)}
-                    required
-                    className="bg-white/5 border-white/20 text-white placeholder-white/40 focus:border-white/40 focus:ring-white/20 rounded-xl text-sm sm:text-base h-10 sm:h-12"
-                  />
+                  <Input id="projectTitle" type="text" placeholder="e.g., Solar Power Installation for Rural Community"
+                    value={formData.projectTitle} onChange={e => handleInputChange("projectTitle", e.target.value)}
+                    required className="bg-white/5 border-white/20 text-white placeholder-white/40 focus:border-white/40 rounded-xl text-sm sm:text-base h-10 sm:h-12" />
                 </div>
 
-                {/* Category */}
                 <div className="space-y-2">
                   <Label htmlFor="category" className="text-white font-medium text-sm">Category *</Label>
                   <div className="relative">
-                    <select
-                      id="category"
-                      value={formData.category}
-                      onChange={(e) => handleInputChange("category", e.target.value)}
-                      required
-                      className="w-full bg-white/5 border border-white/20 text-white rounded-xl px-3 py-2 sm:px-4 sm:py-3 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/40 text-sm sm:text-base h-10 sm:h-12 touch-manipulation appearance-none"
-                      style={{ color: formData.category ? 'white' : 'rgba(255, 255, 255, 0.4)' }}
-                    >
+                    <select id="category" value={formData.category} onChange={e => handleInputChange("category", e.target.value)}
+                      required className="w-full bg-white/5 border border-white/20 text-white rounded-xl px-3 py-2 sm:px-4 sm:py-3 focus:outline-none focus:ring-2 focus:ring-white/20 text-sm sm:text-base h-10 sm:h-12 appearance-none"
+                      style={{ color: formData.category ? 'white' : 'rgba(255,255,255,0.4)' }}>
                       <option value="" disabled className="bg-slate-800 text-white/60">Select category</option>
                       <option value="renewable-energy" className="bg-slate-800 text-white">Renewable Energy</option>
                       <option value="reforestation" className="bg-slate-800 text-white">Reforestation</option>
@@ -246,74 +243,43 @@ export function SubmitProposalPage() {
                   </div>
                 </div>
 
-                {/* Location Picker */}
                 <div className="space-y-2">
                   <Label className="text-white font-medium text-sm">Location *</Label>
-                  <LocationPicker
-                    value={formData.location}
-                    onChange={(location, lat, lng) =>
-                      setFormData(prev => ({ ...prev, location, latitude: lat, longitude: lng }))
-                    }
-                  />
+                  <LocationPicker value={formData.location}
+                    onChange={(location, lat, lng) => setFormData(prev => ({ ...prev, location, latitude: lat, longitude: lng }))} />
                 </div>
 
-                {/* Project Description */}
                 <div className="space-y-2">
                   <Label htmlFor="description" className="text-white font-medium text-sm">Project Description *</Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Describe your project in detail, including objectives, methodology, and timeline..."
-                    value={formData.description}
-                    onChange={(e) => handleInputChange("description", e.target.value)}
-                    required
-                    rows={4}
-                    className="bg-white/5 border-white/20 text-white placeholder-white/40 focus:border-white/40 focus:ring-white/20 rounded-xl text-sm sm:text-base resize-none"
-                  />
+                  <Textarea id="description" placeholder="Describe your project in detail, including objectives, methodology, and timeline..."
+                    value={formData.description} onChange={e => handleInputChange("description", e.target.value)}
+                    required rows={4} className="bg-white/5 border-white/20 text-white placeholder-white/40 focus:border-white/40 rounded-xl text-sm sm:text-base resize-none" />
                   <p className="text-white/60 text-xs">{formData.description.length}/1000 characters</p>
                 </div>
 
-                {/* Expected Impact */}
                 <div className="space-y-2">
                   <Label htmlFor="expectedImpact" className="text-white font-medium text-sm">Expected Climate Impact *</Label>
-                  <Textarea
-                    id="expectedImpact"
-                    placeholder="Quantify the expected environmental benefits (e.g., CO2 reduction, people impacted, area covered)..."
-                    value={formData.expectedImpact}
-                    onChange={(e) => handleInputChange("expectedImpact", e.target.value)}
-                    required
-                    rows={3}
-                    className="bg-white/5 border-white/20 text-white placeholder-white/40 focus:border-white/40 focus:ring-white/20 rounded-xl text-sm sm:text-base resize-none"
-                  />
+                  <Textarea id="expectedImpact" placeholder="Quantify the expected environmental benefits (e.g., CO2 reduction, people impacted, area covered)..."
+                    value={formData.expectedImpact} onChange={e => handleInputChange("expectedImpact", e.target.value)}
+                    required rows={3} className="bg-white/5 border-white/20 text-white placeholder-white/40 focus:border-white/40 rounded-xl text-sm sm:text-base resize-none" />
                 </div>
 
-                {/* Funding Amount & Duration */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="fundingAmount" className="text-white font-medium text-sm">Funding Requested (USD) *</Label>
                     <div className="relative">
-                      <DollarSignIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
-                      <Input
-                        id="fundingAmount"
-                        type="number"
-                        placeholder="50000"
-                        value={formData.fundingAmount}
-                        onChange={(e) => handleInputChange("fundingAmount", e.target.value)}
-                        required
-                        min="1"
-                        className="pl-10 bg-white/5 border-white/20 text-white placeholder-white/40 focus:border-white/40 focus:ring-white/20 rounded-xl text-sm sm:text-base h-10 sm:h-12"
-                      />
+                      <DollarSignIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                      <Input id="fundingAmount" type="number" placeholder="50000" value={formData.fundingAmount}
+                        onChange={e => handleInputChange("fundingAmount", e.target.value)} required min="1"
+                        className="pl-10 bg-white/5 border-white/20 text-white placeholder-white/40 focus:border-white/40 rounded-xl text-sm sm:text-base h-10 sm:h-12" />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="duration" className="text-white font-medium text-sm">Project Duration</Label>
                     <div className="relative">
-                      <select
-                        id="duration"
-                        value={formData.duration}
-                        onChange={(e) => handleInputChange("duration", e.target.value)}
-                        className="w-full pl-4 pr-10 bg-white/5 border border-white/20 text-white rounded-xl px-3 py-2 sm:px-4 sm:py-3 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/40 text-sm sm:text-base h-10 sm:h-12 touch-manipulation appearance-none"
-                        style={{ color: formData.duration ? 'white' : 'rgba(255, 255, 255, 0.4)' }}
-                      >
+                      <select id="duration" value={formData.duration} onChange={e => handleInputChange("duration", e.target.value)}
+                        className="w-full bg-white/5 border border-white/20 text-white rounded-xl px-3 py-2 sm:px-4 sm:py-3 focus:outline-none text-sm sm:text-base h-10 sm:h-12 appearance-none"
+                        style={{ color: formData.duration ? 'white' : 'rgba(255,255,255,0.4)' }}>
                         <option value="" disabled className="bg-slate-800 text-white/60">Select duration</option>
                         <option value="3-months" className="bg-slate-800 text-white">3 months</option>
                         <option value="6-months" className="bg-slate-800 text-white">6 months</option>
@@ -321,7 +287,7 @@ export function SubmitProposalPage() {
                         <option value="2-years" className="bg-slate-800 text-white">2 years</option>
                         <option value="3-years+" className="bg-slate-800 text-white">3+ years</option>
                       </select>
-                      <CalendarIcon className="absolute right-8 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
+                      <CalendarIcon className="absolute right-8 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
                       <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                         <svg className="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -331,37 +297,30 @@ export function SubmitProposalPage() {
                   </div>
                 </div>
 
-                <TransactionCostEstimate
-                  numTransactions={1}
-                  className="bg-white/5 border-white/10 rounded-xl p-3 sm:p-4"
-                />
+                <TransactionCostEstimate numTransactions={1} className="bg-white/5 border-white/10 rounded-xl p-3 sm:p-4" />
 
                 <div className="pt-4">
                   {!isConnected ? (
                     <div className="space-y-3">
                       <p className="text-center text-red-400 text-sm">Please connect your wallet to submit a proposal</p>
                       <Button type="button" onClick={() => router.push('/connect-wallet')}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium h-10 sm:h-12 rounded-xl text-sm sm:text-base touch-manipulation">
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium h-10 sm:h-12 rounded-xl text-sm sm:text-base">
                         Connect Wallet
                       </Button>
                     </div>
                   ) : (
                     <Button type="submit" disabled={loading || transactionState.status === 'pending'}
-                      className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium h-10 sm:h-12 rounded-xl text-sm sm:text-base touch-manipulation">
+                      className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium h-10 sm:h-12 rounded-xl text-sm sm:text-base">
                       {loading || transactionState.status === 'pending' ? (
                         <div className="flex items-center space-x-2">
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                           <span>Submitting to Blockchain...</span>
                         </div>
-                      ) : (
-                        <><UploadIcon className="w-4 h-4 mr-2" />Submit Proposal</>
-                      )}
+                      ) : (<><UploadIcon className="w-4 h-4 mr-2" />Submit Proposal</>)}
                     </Button>
                   )}
                 </div>
-
                 <p className="text-white/60 text-xs text-center">* Required fields</p>
-
               </form>
             </CardContent>
           </Card>
