@@ -6,36 +6,16 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
-    // Upload to Cloudinary
-    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
-    const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET
+    // Convert to base64 and return as data URL — no external service needed
+    const bytes = await file.arrayBuffer()
+    const base64 = Buffer.from(bytes).toString('base64')
+    const dataUrl = `data:${file.type};base64,${base64}`
 
-    if (!cloudName || !uploadPreset) {
-      return NextResponse.json({ error: 'Cloudinary not configured' }, { status: 500 })
-    }
-
-    const upload = new FormData()
-    upload.append('file', file)
-    upload.append('upload_preset', uploadPreset)
-    upload.append('folder', 'econexus-proofs')
-
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
-      method: 'POST',
-      body: upload,
-    })
-
-    if (!res.ok) {
-      const err = await res.json()
-      return NextResponse.json({ error: err.error?.message || 'Upload failed' }, { status: 500 })
-    }
-
-    const data = await res.json()
     return NextResponse.json({
-      url: data.secure_url,
-      type: data.resource_type,
-      format: data.format,
+      url: dataUrl,
       name: file.name,
-      size: data.bytes,
+      type: file.type,
+      size: file.size,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

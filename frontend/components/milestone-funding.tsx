@@ -462,10 +462,22 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                         <p className="text-yellow-400 text-xs font-medium mb-1">📋 Proof submitted by proposer:</p>
                         {m.proof?.split('\n').map((line: string, li: number) =>
                           line.startsWith('[') && line.includes('](') ? (
-                            <a key={li} href={line.match(/\((.+)\)/)?.[1]} target="_blank" rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 underline">
-                              📄 {line.match(/\[(.+)\]/)?.[1]}
-                            </a>
+                            (() => {
+                              const url = line.match(/\((.+)\)/)?.[1] || ''
+                              const name = line.match(/\[(.+)\]/)?.[1] || 'file'
+                              const isImage = url.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(name)
+                              return isImage ? (
+                                <img key={li} src={url} alt={name}
+                                  className="max-w-full max-h-48 rounded-lg border border-white/10 cursor-pointer object-cover"
+                                  onClick={() => window.open(url, '_blank')}
+                                />
+                              ) : (
+                                <a key={li} href={url} target="_blank" rel="noopener noreferrer" download={name}
+                                  className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 underline">
+                                  📄 {name}
+                                </a>
+                              )
+                            })()
                           ) : (
                             <p key={li} className="text-white/70 text-xs">{line}</p>
                           )
@@ -581,10 +593,22 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                         <p className="text-blue-400 text-xs font-medium mb-1">🔍 Fund usage proof submitted:</p>
                         {m.usageProof?.split('\n').map((line: string, li: number) =>
                           line.startsWith('[') && line.includes('](') ? (
-                            <a key={li} href={line.match(/\((.+)\)/)?.[1]} target="_blank" rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 underline">
-                              📄 {line.match(/\[(.+)\]/)?.[1]}
-                            </a>
+                            (() => {
+                              const url = line.match(/\((.+)\)/)?.[1] || ''
+                              const name = line.match(/\[(.+)\]/)?.[1] || 'file'
+                              const isImage = url.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(name)
+                              return isImage ? (
+                                <img key={li} src={url} alt={name}
+                                  className="max-w-full max-h-48 rounded-lg border border-white/10 cursor-pointer object-cover"
+                                  onClick={() => window.open(url, '_blank')}
+                                />
+                              ) : (
+                                <a key={li} href={url} target="_blank" rel="noopener noreferrer" download={name}
+                                  className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 underline">
+                                  📄 {name}
+                                </a>
+                              )
+                            })()
                           ) : (
                             <p key={li} className="text-white/70 text-xs">{line}</p>
                           )
