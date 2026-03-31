@@ -122,8 +122,24 @@ export default function ProposalReviewPage() {
                     <MapPinIcon className="w-3 h-3" />{proposal.location}
                   </span>
                 )}
+                {proposal.duration && (
+                  <span className="text-white/40">⏱ {proposal.duration}</span>
+                )}
               </div>
-              <p className="text-white/70 text-sm leading-relaxed line-clamp-3">{proposal.description}</p>
+
+              <div className="border-t border-white/10 pt-3 space-y-3">
+                <div>
+                  <p className="text-white/40 text-xs font-medium uppercase tracking-wide mb-1">Description</p>
+                  <p className="text-white/70 text-sm leading-relaxed whitespace-pre-wrap">{proposal.description}</p>
+                </div>
+
+                {proposal.expectedImpact && (
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-3 space-y-1">
+                    <p className="text-white/40 text-xs font-medium uppercase tracking-wide">Expected Climate Impact</p>
+                    <p className="text-white/70 text-sm leading-relaxed">{proposal.expectedImpact}</p>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
