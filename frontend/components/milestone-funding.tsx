@@ -32,9 +32,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [submittingProof, setSubmittingProof] = useState<number | null>(null)
   const [usageProofInputs, setUsageProofInputs] = useState<Record<number, string>>({})
   const [submittingUsageProof, setSubmittingUsageProof] = useState<number | null>(null)
-  const [proofFiles, setProofFiles] = useState<Record<number, File[]>>({})
-  const [usageProofFiles, setUsageProofFiles] = useState<Record<number, File[]>>({})
-  const [uploadingFiles, setUploadingFiles] = useState<Record<number, boolean>>({})
+  const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null)
 
 
   const isProposer = address === proposalCreator
@@ -306,7 +304,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       const fresh = await pRes.json()
       const updated = (fresh.milestones || []).map((m: any, i: number) => {
         if (i === milestoneIdx) return { ...m, status: approve ? "released" : "usage_rejected" }
-        if (approve && i === milestoneIdx + 1 && m.status === "locked") return { ...m, status: "active" }
+        if (approve && i === milestoneIdx + 1 && m.status === "locked") return { ...m, status: "active", voteYes: 0, voteNo: 0 }
         return m
       })
       await fetch("/api/proposals", {
@@ -468,8 +466,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                               const isImage = url.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(name)
                               return isImage ? (
                                 <img key={li} src={url} alt={name}
-                                  className="max-w-full max-h-48 rounded-lg border border-white/10 cursor-pointer object-cover"
-                                  onClick={() => window.open(url, '_blank')}
+                                  className="max-w-full max-h-48 rounded-lg border border-white/10 cursor-zoom-in object-cover hover:opacity-90 transition-opacity"
+                                  onClick={() => setLightbox({ url, name })}
                                 />
                               ) : (
                                 <a key={li} href={url} target="_blank" rel="noopener noreferrer" download={name}
@@ -544,7 +542,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                   )}
 
                   {/* STEP 4: Funds released — proposer submits usage proof */}
-                  {isReleasedPendingUsage && isProposer && (
+                  {isReleasedPendingUsage && !m.usageProof && isProposer && (
                     <div className="pl-8 space-y-2 pt-1">
                       <p className="text-purple-300 text-xs font-medium">💸 Funds received! Show the community how you used them:</p>
                       <textarea
@@ -582,7 +580,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                     </div>
                   )}
 
-                  {isReleasedPendingUsage && !isProposer && (
+                  {isReleasedPendingUsage && !m.usageProof && !isProposer && (
                     <p className="text-purple-400/70 text-xs pl-8">⏳ Waiting for proposer to submit fund usage proof...</p>
                   )}
 
@@ -599,8 +597,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                               const isImage = url.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(name)
                               return isImage ? (
                                 <img key={li} src={url} alt={name}
-                                  className="max-w-full max-h-48 rounded-lg border border-white/10 cursor-pointer object-cover"
-                                  onClick={() => window.open(url, '_blank')}
+                                  className="max-w-full max-h-48 rounded-lg border border-white/10 cursor-zoom-in object-cover hover:opacity-90 transition-opacity"
+                                  onClick={() => setLightbox({ url, name })}
                                 />
                               ) : (
                                 <a key={li} href={url} target="_blank" rel="noopener noreferrer" download={name}
@@ -675,6 +673,23 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
           )}
         </CardContent>
       </Card>
+
+      {/* Lightbox for image preview */}
+      {lightbox && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8"
+          onClick={() => setLightbox(null)}>
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" />
+          <div className="relative z-10 max-w-3xl w-full space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <p className="text-white/70 text-sm truncate">{lightbox.name}</p>
+              <button onClick={() => setLightbox(null)}
+                className="text-white/50 hover:text-white text-xl leading-none px-2">×</button>
+            </div>
+            <img src={lightbox.url} alt={lightbox.name}
+              className="w-full max-h-[75vh] object-contain rounded-xl border border-white/10" />
+          </div>
+        </div>
+      )}
 
       {releaseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
