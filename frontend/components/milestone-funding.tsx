@@ -154,8 +154,12 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       const pRes = await fetch(`/api/proposals/${proposalId}`)
       const fresh = await pRes.json()
       const updated = (fresh.milestones || []).map((m: any, i: number) =>
-        i !== milestoneIdx ? m : { ...m, status: "pending_proof", proof }
+        i !== milestoneIdx ? m : { ...m, status: "pending_proof", proof, voteYes: 0, voteNo: 0 }
       )
+      // Clear old votes from DB so community can vote fresh
+      await fetch(`/api/milestone-votes?proposalId=${proposalId}&milestoneIdx=${milestoneIdx}`, {
+        method: 'DELETE',
+      })
       await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -164,6 +168,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       setMilestones(updated)
       setProofInputs(prev => ({ ...prev, [milestoneIdx]: "" }))
       setProofFiles(prev => ({ ...prev, [milestoneIdx]: [] }))
+      // Clear local vote state so UI shows vote buttons again
+      setMyVotes(prev => { const n = { ...prev }; delete n[milestoneIdx]; return n })
     } catch (err: any) {
       alert(`Failed: ${err.message}`)
     } finally {

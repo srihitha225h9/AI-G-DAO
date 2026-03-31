@@ -33,8 +33,27 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/milestone-votes
-export async function POST(req: NextRequest) {
+// DELETE /api/milestone-votes?proposalId=X&milestoneIdx=Y
+export async function DELETE(req: NextRequest) {
+  try {
+    await ensureTable()
+    const { searchParams } = new URL(req.url)
+    const proposalId = searchParams.get('proposalId')
+    const milestoneIdx = searchParams.get('milestoneIdx')
+    if (!proposalId) return NextResponse.json({ error: 'Missing proposalId' }, { status: 400 })
+    if (milestoneIdx !== null) {
+      await pool.query(
+        'DELETE FROM milestone_votes WHERE proposal_id = $1 AND milestone_idx = $2',
+        [proposalId, milestoneIdx]
+      )
+    } else {
+      await pool.query('DELETE FROM milestone_votes WHERE proposal_id = $1', [proposalId])
+    }
+    return NextResponse.json({ success: true })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
   try {
     await ensureTable()
     const { proposalId, milestoneIdx, voterAddress, vote } = await req.json()
