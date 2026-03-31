@@ -177,7 +177,10 @@ export async function DELETE(req: NextRequest) {
     if (!id || !creator) return NextResponse.json({ error: 'Missing id or creator' }, { status: 400 });
 
     const { rows } = await pool.query('SELECT creator, vote_yes, vote_no FROM proposals WHERE id = $1', [id]);
-    if (rows.length === 0) return NextResponse.json({ error: 'Proposal not found' }, { status: 404 });
+    
+    // If not found in DB, treat as already deleted — success
+    if (rows.length === 0) return NextResponse.json({ success: true });
+    
     if (rows[0].creator !== creator) return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     if (rows[0].vote_yes > 0 || rows[0].vote_no > 0) return NextResponse.json({ error: 'Cannot delete a proposal that has received votes' }, { status: 400 });
 

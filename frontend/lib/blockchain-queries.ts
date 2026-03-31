@@ -1054,10 +1054,13 @@ export class ClimateDAOQueryService {
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || 'Failed to delete proposal');
+        // If not found in DB, still clean up localStorage
+        if (err.error !== 'Proposal not found') {
+          throw new Error(err.error || 'Failed to delete proposal');
+        }
       }
 
-      // Also remove from local cache
+      // Remove from local cache regardless
       const proposals = this.getStoredProposals().filter(p => p.id !== proposalId);
       localStorage.setItem('climate_dao_proposals', JSON.stringify(proposals));
       localStorage.removeItem(`proposal_ai_${proposalId}`);
