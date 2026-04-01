@@ -324,12 +324,15 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   // Community verifies fund usage — approves unlocks next milestone
   const handleVerifyUsage = async (milestoneIdx: number, approve: boolean) => {
     if (!address || isProposer) return
+    isSubmitting.current = true
     try {
       const pRes = await fetch(`/api/proposals/${proposalId}`)
       const fresh = await pRes.json()
-      const updated = (fresh.milestones || []).map((m: any, i: number) => {
+      const freshMilestones = fresh.milestones || []
+      const updated = freshMilestones.map((m: any, i: number) => {
         if (i === milestoneIdx) return { ...m, status: approve ? "released" : "usage_rejected" }
-        if (approve && i === milestoneIdx + 1 && m.status === "locked") return { ...m, status: "active", voteYes: 0, voteNo: 0 }
+        // Unlock next milestone regardless of current status (locked or otherwise)
+        if (approve && i === milestoneIdx + 1) return { ...m, status: "active", voteYes: 0, voteNo: 0, proof: undefined, usageProof: undefined }
         return m
       })
       await fetch("/api/proposals", {
@@ -337,9 +340,18 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: proposalId, milestones: updated }),
       })
+      // Also clear votes for the next milestone so it starts fresh
+      if (approve && milestoneIdx + 1 < freshMilestones.length) {
+        await fetch(`/api/milestone-votes?proposalId=${proposalId}&milestoneIdx=${milestoneIdx + 1}`, {
+          method: 'DELETE',
+        })
+      }
       setMilestones(updated)
+      setMyVotes(prev => { const n = { ...prev }; delete n[milestoneIdx + 1]; return n })
     } catch (err: any) {
       alert(`Failed: ${err.message}`)
+    } finally {
+      isSubmitting.current = false
     }
   }
 
