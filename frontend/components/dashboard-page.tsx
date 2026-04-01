@@ -166,10 +166,7 @@ export function DashboardPage() {
     }
   }, [isConnected, address, disconnect])
 
-  // Remove artificial loading delay for better performance
-  useEffect(() => {
-    setIsLoading(false)
-  }, [])
+
 
   // Load and subscribe to favorites changes
   useEffect(() => {
@@ -186,9 +183,10 @@ export function DashboardPage() {
 
   // Fetch proposals data and listen for community updates
   useEffect(() => {
+    let firstLoad = true
     const fetchProposalData = async () => {
       try {
-        setIsLoading(true)
+        if (firstLoad) setIsLoading(true)
 
         // Get all proposals
         const allProposals = await getProposals()
@@ -209,7 +207,7 @@ export function DashboardPage() {
       } catch (error) {
         console.error('Failed to fetch proposal data:', error)
       } finally {
-        setIsLoading(false)
+        if (firstLoad) { setIsLoading(false); firstLoad = false }
       }
     }
 
@@ -469,7 +467,7 @@ export function DashboardPage() {
 
                 {settingsOpen && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => { setSettingsOpen(false); setLangOpen(false); }} />
+                    <div className="fixed inset-0 z-40" onClick={() => setSettingsOpen(false)} />
                     <div className="absolute right-0 top-10 z-50 w-60 bg-slate-900/95 backdrop-blur-xl border border-white/15 rounded-2xl shadow-2xl overflow-hidden">
 
                       {/* Wallet header */}
