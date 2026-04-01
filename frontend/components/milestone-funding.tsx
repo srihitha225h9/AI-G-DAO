@@ -36,7 +36,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   const [proofFiles, setProofFiles] = useState<Record<number, File[]>>({})
   const [usageProofFiles, setUsageProofFiles] = useState<Record<number, File[]>>({})
   const [uploadingFiles, setUploadingFiles] = useState<Record<number, boolean>>({})
-  const isEditing = useRef(false)
+  const isSubmitting = useRef(false)
 
 
   const isProposer = address === proposalCreator
@@ -80,7 +80,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       if (pRes.ok && allVotesRes.ok) {
         const p = await pRes.json()
         const allVotesData = await allVotesRes.json()
-        if (p.milestones?.length && !isEditing.current) {
+        if (p.milestones?.length && !isSubmitting.current) {
           // Recompute voteYes/voteNo/status from DB votes (source of truth)
           const recomputed = p.milestones.map((m: any, i: number) => {
             const mv = (allVotesData.votes || []).filter((v: any) => v.milestone_idx === i)
@@ -111,7 +111,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     fetchMyVotes(); fetchBackground()
     const interval = setInterval(() => { fetchBackground(); fetchMyVotes() }, 3000)
     // Refresh immediately when user switches back to this tab
-    const onFocus = () => { if (!isEditing.current) { fetchBackground(); fetchMyVotes() } }
+    const onFocus = () => { if (!isSubmitting.current) { fetchBackground(); fetchMyVotes() } }
     window.addEventListener('visibilitychange', onFocus)
     window.addEventListener('focus', onFocus)
     return () => {
@@ -147,6 +147,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     const text = proofInputs[milestoneIdx]?.trim()
     const files = proofFiles[milestoneIdx] || []
     if (!text && !files.length) return alert("Please add a description or upload at least one file.")
+    isSubmitting.current = true
     setSubmittingProof(milestoneIdx)
     try {
       const fileLinks = await uploadFiles(files, milestoneIdx)
@@ -168,11 +169,11 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
       setMilestones(updated)
       setProofInputs(prev => ({ ...prev, [milestoneIdx]: "" }))
       setProofFiles(prev => ({ ...prev, [milestoneIdx]: [] }))
-      // Clear local vote state so UI shows vote buttons again
       setMyVotes(prev => { const n = { ...prev }; delete n[milestoneIdx]; return n })
     } catch (err: any) {
       alert(`Failed: ${err.message}`)
     } finally {
+      isSubmitting.current = false
       setSubmittingProof(null)
     }
   }
@@ -180,6 +181,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   // Community votes to approve/reject proof
   const handleVote = async (milestoneIdx: number, vote: "for" | "against") => {
     if (!address || isProposer) return
+    isSubmitting.current = true
     setVotingIdx(milestoneIdx)
     try {
       // 1. Save vote to DB first
@@ -231,6 +233,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     } catch (err: any) {
       alert(`Vote failed: ${err.message}`)
     } finally {
+      isSubmitting.current = false
       setVotingIdx(null)
     }
   }
@@ -238,6 +241,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
   // Proposer releases funds after community approves proof
   const handleRelease = async (milestoneIdx: number, amountAlgo: number) => {
     if (!address || !signTransaction) return
+    isSubmitting.current = true
     setReleasingIdx(milestoneIdx)
     try {
       const params = await algodClient.getTransactionParams().do()
@@ -281,6 +285,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     } catch (err: any) {
       alert(`Release failed: ${err.message}`)
     } finally {
+      isSubmitting.current = false
       setReleasingIdx(null)
     }
   }
@@ -290,6 +295,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     const text = usageProofInputs[milestoneIdx]?.trim()
     const files = usageProofFiles[milestoneIdx] || []
     if (!text && !files.length) return alert("Please add a description or upload at least one file.")
+    isSubmitting.current = true
     setSubmittingUsageProof(milestoneIdx)
     try {
       const fileLinks = await uploadFiles(files, milestoneIdx)
@@ -310,6 +316,7 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
     } catch (err: any) {
       alert(`Failed: ${err.message}`)
     } finally {
+      isSubmitting.current = false
       setSubmittingUsageProof(null)
     }
   }
@@ -434,8 +441,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                       <textarea
                         placeholder="Describe what you completed (links, GitHub commits, reports...)"
                         value={proofInputs[i] || ""}
-                        onFocus={() => { isEditing.current = true }}
-                        onBlur={() => { isEditing.current = false }}
+                        onFocus={() => { isSubmitting.current = true }}
+                        onBlur={() => { isSubmitting.current = false }}
                         onChange={e => setProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
                         rows={2}
                         className="w-full bg-white/5 border border-white/15 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-white/30"
@@ -550,8 +557,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                       <textarea
                         placeholder="Update your proof with more details..."
                         value={proofInputs[i] || ""}
-                        onFocus={() => { isEditing.current = true }}
-                        onBlur={() => { isEditing.current = false }}
+                        onFocus={() => { isSubmitting.current = true }}
+                        onBlur={() => { isSubmitting.current = false }}
                         onChange={e => setProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
                         rows={2}
                         className="w-full bg-white/5 border border-red-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none"
@@ -590,8 +597,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                       <textarea
                         placeholder="Describe how the funds were used (vendor names, what was purchased, amounts spent...)"
                         value={usageProofInputs[i] || ""}
-                        onFocus={() => { isEditing.current = true }}
-                        onBlur={() => { isEditing.current = false }}
+                        onFocus={() => { isSubmitting.current = true }}
+                        onBlur={() => { isSubmitting.current = false }}
                         onChange={e => setUsageProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
                         rows={2}
                         className="w-full bg-white/5 border border-purple-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-purple-500/40"
@@ -680,8 +687,8 @@ export function MilestoneFunding({ proposalId, proposalCreator, totalFunding, in
                       <textarea
                         placeholder="Provide clearer evidence of fund usage..."
                         value={usageProofInputs[i] || ""}
-                        onFocus={() => { isEditing.current = true }}
-                        onBlur={() => { isEditing.current = false }}
+                        onFocus={() => { isSubmitting.current = true }}
+                        onBlur={() => { isSubmitting.current = false }}
                         onChange={e => setUsageProofInputs(prev => ({ ...prev, [i]: e.target.value }))}
                         rows={2}
                         className="w-full bg-white/5 border border-orange-500/20 text-white placeholder-white/30 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none"
